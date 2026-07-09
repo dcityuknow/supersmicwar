@@ -94,14 +94,28 @@ const NET = (() => {
     });
   }
 
+  function friendlyPeerErrorMessage(err) {
+    const type = err && err.type;
+    if (type === 'peer-unavailable') {
+      return 'Không tìm thấy phòng với mã này. Kiểm tra lại: Host còn đang mở trang (chưa tắt/reload) và mã phòng gõ đúng (không dư khoảng trắng).';
+    }
+    if (type === 'network' || type === 'server-error' || type === 'socket-error' || type === 'socket-closed') {
+      return 'Không kết nối được tới máy chủ ghép nối. Kiểm tra lại mạng, hoặc adblock/firewall có thể đang chặn PeerJS.';
+    }
+    if (type === 'browser-incompatible') {
+      return 'Trình duyệt này không hỗ trợ WebRTC. Thử trình duyệt khác (Chrome, Edge, Firefox bản mới).';
+    }
+    return 'Không kết nối được tới phòng (' + (type || String(err)) + ').';
+  }
+
   function initClient(hostId, name, cb) {
     mode = 'client';
     peer = makePeer(null);
+    let settled = false; // đã có kết quả (thành công/thất bại) hay chưa, tránh gọi cb/onConnError nhiều lần
     peer.on('open', pid => {
       myPeerId = pid;
       const conn = peer.connect(hostId, { reliable: true });
       hostConn = conn;
-      let settled = false; // đã có kết quả (thành công/thất bại) hay chưa, tránh gọi cb 2 lần
 
       // Nếu sau CONNECT_TIMEOUT_MS vẫn chưa "open" được (thường do 2 máy không
       // bắt tay P2P được và không có TURN server phù hợp) -> báo lỗi rõ ràng
@@ -127,12 +141,14 @@ const NET = (() => {
         if (settled) return;
         settled = true;
         clearTimeout(timeoutId);
-        if (onConnError) onConnError('Không kết nối được, kiểm tra lại mã phòng.');
+        if (onConnError) onConnError(friendlyPeerErrorMessage(err));
         cb(err, null);
       });
     });
     peer.on('error', err => {
-      if (onConnError) onConnError((err && err.type) || String(err));
+      if (settled) return;
+      settled = true;
+      if (onConnError) onConnError(friendlyPeerErrorMessage(err));
       cb(err, null);
     });
   }

@@ -85,7 +85,15 @@ joinConfirmBtn.addEventListener('click', () => {
 
   NET.initClient(code, myDisplayName, (err) => {
     joinConfirmBtn.disabled = false;
-    if (err) { joinError.textContent = 'Không vào được phòng — kiểm tra lại mã phòng.'; return; }
+    if (err) {
+      // Lý do cụ thể đã được NET.onConnError hiển thị ở trên rồi (peer-unavailable,
+      // hết giờ chờ, lỗi mạng...). Chỉ đặt thông báo chung khi vì lý do nào đó
+      // onConnError chưa kịp set (tránh mất thông tin chẩn đoán chi tiết).
+      if (!joinError.textContent || joinError.textContent === 'Đang kết nối...') {
+        joinError.textContent = 'Không vào được phòng — kiểm tra lại mã phòng.';
+      }
+      return;
+    }
     joinError.textContent = '';
     lobbyBar.classList.remove('hidden');
     roomCodeBox.classList.add('hidden');
