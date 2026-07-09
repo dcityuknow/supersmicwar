@@ -25,6 +25,24 @@ const NET = (() => {
   let broadcastCounter = 0;
   const BROADCAST_EVERY = 2; // gửi state ~30 lần/giây (game chạy ~60fps)
 
+  // Thời gian tối đa (ms) Client chờ Host phản hồi trước khi báo lỗi,
+  // thay vì treo mãi ở "Đang kết nối..." khi 2 máy không thể bắt tay P2P được.
+  const CONNECT_TIMEOUT_MS = 15000;
+
+  // Cấu hình ICE server: chỉ dùng STUN mặc định KHÔNG đủ khi 2 máy ở 2 mạng
+  // khác nhau có NAT/firewall chặt (mạng công ty, 4G, VPN...) — lúc đó WebRTC
+  // không tìm được đường đi trực tiếp và kết nối treo lơ lửng mãi, không báo lỗi.
+  // Cần thêm TURN server để "tiếp sức" trong các trường hợp đó.
+  const ICE_CONFIG = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+    ]
+  };
+
   function shortRoomCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // bỏ ký tự dễ nhầm (0/O, 1/I)
     let s = '';
@@ -34,7 +52,8 @@ const NET = (() => {
 
   function makePeer(customId) {
     // Peer() không truyền id -> PeerJS tự cấp id ngẫu nhiên (dùng cho client)
-    return customId ? new Peer(customId) : new Peer();
+    const opts = { config: ICE_CONFIG };
+    return customId ? new Peer(customId, opts) : new Peer(opts);
   }
 
   // ---------- Khởi tạo theo từng chế độ ----------
@@ -82,17 +101,34 @@ const NET = (() => {
       myPeerId = pid;
       const conn = peer.connect(hostId, { reliable: true });
       hostConn = conn;
-      let opened = false;
+      let settled = false; // đã có kết quả (thành công/thất bại) hay chưa, tránh gọi cb 2 lần
+
+      // Nếu sau CONNECT_TIMEOUT_MS vẫn chưa "open" được (thường do 2 máy không
+      // bắt tay P2P được và không có TURN server phù hợp) -> báo lỗi rõ ràng
+      // thay vì treo mãi ở "Đang kết nối..."
+      const timeoutId = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        if (onConnError) onConnError('Không kết nối được tới phòng (quá thời gian chờ). Kiểm tra lại mã phòng, hoặc thử đổi mạng (một số mạng công ty/wifi công cộng chặn kết nối P2P).');
+        cb(new Error('connect-timeout'), null);
+        try { conn.close(); } catch (e) {}
+      }, CONNECT_TIMEOUT_MS);
+
       conn.on('open', () => {
-        opened = true;
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
         conn.send({ t: 'join', name: name || 'Người chơi' });
         cb(null, pid);
       });
       conn.on('data', data => handleClientData(data));
       conn.on('close', () => { if (onConnError) onConnError('Mất kết nối tới phòng.'); });
       conn.on('error', err => {
-        if (!opened && onConnError) onConnError('Không kết nối được, kiểm tra lại mã phòng.');
-        if (!opened) cb(err, null);
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        if (onConnError) onConnError('Không kết nối được, kiểm tra lại mã phòng.');
+        cb(err, null);
       });
     });
     peer.on('error', err => {
