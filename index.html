@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Super Platformer Bros</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Màn hình chọn chế độ chơi: Solo / Tạo phòng (Host) / Vào phòng (Client) -->
+<div id="modeScreen">
+  <h1>🍄 SUPER PLATFORMER BROS 🍄</h1>
+  <p>Chọn chế độ chơi</p>
+  <div class="modeButtons">
+    <button id="modeSoloBtn" class="modeBtn">🧍 Chơi Solo</button>
+    <button id="modeHostBtn" class="modeBtn">👑 Tạo phòng (Host)</button>
+    <button id="modeClientBtn" class="modeBtn">🔑 Vào phòng</button>
+  </div>
+  <div id="joinRow" class="hidden">
+    <input id="joinCodeInput" placeholder="Nhập mã phòng của Host" maxlength="10">
+    <button id="joinConfirmBtn">Kết nối</button>
+    <div id="joinError" class="lobbyError"></div>
+  </div>
+</div>
+
+<!-- Character select screen (dùng chung cho Solo / Host / Client) -->
+<div id="selectScreen" style="display:none;">
+  <h1>🍄 SUPER PLATFORMER BROS 🍄</h1>
+  <p>Chọn nhân vật</p>
+
+  <div id="lobbyBar" class="hidden">
+    <div id="roomCodeBox" class="hidden">Mã phòng: <b id="roomCodeText">-----</b></div>
+    <div id="lobbyStatus"></div>
+    <div id="lobbyPlayerList"></div>
+    <div id="waitingText" class="hidden">Đang chờ Host bấm Bắt Đầu...</div>
+  </div>
+
+  <div id="charGrid"></div>
+  <button id="startBtn">Start Game</button>
+</div>
+
+<div id="ui" class="hidden">
+  <div>Lives: <span id="lives">3</span></div>
+  <div id="coinBox">Magnitude: <span id="coins">0</span>/<span id="totalCoins">0</span></div>
+  <div id="levelBox">Level: <span id="levelNum">1</span>/<span id="totalLevels">3</span></div>
+</div>
+
+<canvas id="game"></canvas>
+
+<div id="levelBanner"></div>
+
+<div id="info" class="hidden">
+  Controls: ← → move, SPACE / ↑ jump, Z kick, X slash. Stomp on enemies' heads, or hit them with a kick or slash to defeat them. Defeat the Guardian Dragon before the flag to clear the level!
+</div>
+
+<div id="overlay">
+  <h2 id="overlayText"></h2>
+  <button id="restartBtn" onclick="restartGame()">Play Again</button>
+  <div id="restartWaitText" style="display:none; color:#fff; text-shadow:1px 1px #000;">Chờ Host chơi lại...</div>
+</div>
+
+<!--
+  script.js gốc đã được tách thành nhiều module nhỏ trong thư mục js/,
+  mỗi file phụ trách một mảng riêng của game. Vì đây là script thường (không phải
+  ES module) nên TẤT CẢ các file vẫn dùng chung 1 phạm vi biến toàn cục — chỉ khác
+  là code được chia theo chức năng cho dễ đọc/dễ bảo trì.
+
+  QUAN TRỌNG: phải giữ đúng thứ tự load bên dưới, vì file sau có thể dùng biến/hàm
+  của file trước. PeerJS (thư viện kết nối nhiều người chơi qua WebRTC) được tải
+  từ CDN, cần load TRƯỚC net.js.
+-->
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="js/sfx.js"></script>
+<script src="js/canvas.js"></script>
+<script src="js/config.js"></script>
+<script src="js/effects.js"></script>
+<script src="js/input.js"></script>
+<script src="js/net.js"></script>
+<script src="js/characters.js"></script>
+<script src="js/level.js"></script>
+<script src="js/game-state.js"></script>
+<script src="js/update.js"></script>
+<script src="js/render.js"></script>
+<script src="js/boss.js"></script>
+<script src="js/draw.js"></script>
+<script src="js/lobby.js"></script>
+</body>
+</html>

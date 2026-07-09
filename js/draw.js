@@ -1,0 +1,188 @@
+// ============================================================
+// draw.js — Hàm vẽ toàn bộ khung hình mỗi frame (draw) và vòng lặp
+// chính của game (requestAnimationFrame loop)
+// ============================================================
+
+function draw() {
+  if (!started || !level || !players) return;
+  ctx.clearRect(0, 0, W, H);
+
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0, '#5c94fc');
+  grad.addColorStop(1, '#a0d8ff');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,H);
+
+  drawBackgroundLayer();
+
+  ctx.save();
+  ctx.translate(-camX, 0);
+
+  for (const p of level.platforms) {
+    drawTerrainTile(p.x, p.y, p.w, p.h);
+  }
+
+  // Spikes (gai)
+  for (const s of level.spikes) {
+    drawSpikes(s.x, s.y, s.w, s.h);
+  }
+
+  const coinImgReady = coinImg.complete && coinImg.naturalWidth > 0;
+  for (const c of level.coins) {
+    if (c.taken) continue;
+    // Hiệu ứng nhấp nhô nhẹ theo thời gian + "xoay" giả bằng cách bóp chiều ngang,
+    // mỗi xu lệch pha nhau (dựa vào x) để trông tự nhiên, không đồng loạt.
+    const bob = Math.sin(gameFrame * 0.06 + c.x * 0.02) * 6;
+    const squash = Math.cos(gameFrame * 0.08 + c.x * 0.02);
+    const size = 72;
+    const cx = c.x + size / 2;
+    const cy = c.y + size / 2 + bob;
+
+    if (coinImgReady) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(Math.max(0.15, Math.abs(squash)), 1);
+      ctx.drawImage(coinImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = '#ffd700';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, Math.max(6, 36 * Math.abs(squash)), 36, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#b8860b';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  for (const e of level.enemies) {
+    if (!e.alive) continue;
+    const eFlash = e.flashTimer > 0;
+    drawMonster(e.x, e.y, e.w, e.h, eFlash, e.animSeed);
+
+    // Thanh máu quái vật
+    drawHealthBar(e.x + e.w/2, e.y - 20, e.hp, e.maxHp, 80);
+  }
+
+  // Flag (từ flag.png)
+  if (flagImg.complete && flagImg.naturalWidth > 0) {
+    ctx.drawImage(flagImg, level.flag.x, level.flag.y, level.flag.w, level.flag.h);
+  } else {
+    ctx.fillStyle = '#888';
+    ctx.fillRect(level.flag.x, level.flag.y, level.flag.w, level.flag.h);
+  }
+
+  // Boss Rồng canh giữ (vẽ sau cờ để trông như đang đứng chắn ngay trước cờ)
+  drawBoss();
+
+  // Quái đang bay (bị sút / xoạc trúng)
+  for (const f of level.flyingEnemies) {
+    ctx.save();
+    ctx.translate(f.x + f.w/2, f.y + f.h/2);
+    ctx.rotate(f.rot);
+    ctx.fillStyle = '#8b4513';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, f.w/2, f.h/2, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Đạn quái vật bắn ra: quả cầu năng lượng đỏ phát sáng, xoay tròn theo thời gian
+  for (const b of level.projectiles) {
+    ctx.save();
+    const pulse = 1 + Math.sin(gameFrame * 0.3 + b.x * 0.05) * 0.15;
+
+    const glow = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * 2.4 * pulse);
+    glow.addColorStop(0, 'rgba(255,90,40,0.65)');
+    glow.addColorStop(1, 'rgba(255,90,40,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r * 2.4 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    const coreGrad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * pulse);
+    coreGrad.addColorStop(0, '#fff2b0');
+    coreGrad.addColorStop(0.5, '#ff5a28');
+    coreGrad.addColorStop(1, '#7a1a00');
+    ctx.fillStyle = coreGrad;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r * pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // ----- Tất cả người chơi (mỗi người ảnh nhân vật riêng theo lựa chọn của họ) -----
+  for (const id in players) {
+    const p = players[id];
+    const charImg = getCurrentCharImageFor(p);
+    const flashHidden = p.invincible > 0 && Math.floor(p.invincible/5)%2!==0 && p.animState !== 'xoac';
+    // Hình vẽ to hơn hitbox CHAR_DRAW_SCALE lần, canh giữa theo chiều ngang,
+    // canh đáy trùng đáy hitbox (+ offset nhỏ) để chân luôn chạm đất đúng chỗ va chạm thực tế.
+    const drawW = p.w * CHAR_DRAW_SCALE;
+    const drawH = p.h * CHAR_DRAW_SCALE;
+    const drawX = p.x - (drawW - p.w) / 2;
+    const perCharOffset = CHAR_Y_OFFSET_BY_ID[p.charId] || 0;
+    const drawY = p.y + p.h - drawH + CHAR_VISUAL_Y_OFFSET + perCharOffset;
+    if (!flashHidden) {
+      ctx.save();
+      const hasImg = charImg && charImg.complete && charImg.naturalWidth > 0;
+      const spriteToDraw = (p.damageFlashTimer > 0 && hasImg)
+        ? getTintedSprite(charImg, drawW, drawH, 'rgba(255,40,40,0.6)')
+        : charImg;
+      if (p.facing < 0 && hasImg) {
+        ctx.translate(drawX + drawW, drawY);
+        ctx.scale(-1, 1);
+        ctx.drawImage(spriteToDraw, 0, 0, drawW, drawH);
+      } else if (hasImg) {
+        ctx.drawImage(spriteToDraw, drawX, drawY, drawW, drawH);
+      } else {
+        // Ảnh chưa tải xong -> hình khối tạm
+        ctx.fillStyle = p.damageFlashTimer > 0 ? '#ff2828' : '#e52521';
+        ctx.fillRect(drawX, drawY, drawW, drawH);
+      }
+      ctx.restore();
+    }
+
+    // Thanh máu người chơi - đặt ngay trên đầu, tính theo vị trí vẽ thực tế (đã scale)
+    drawHealthBar(drawX + drawW/2, drawY - 22, p.hp, p.maxHp, 100);
+
+    // Tên người chơi phía trên thanh máu, để phân biệt khi chơi nhiều người.
+    // Người chơi của chính máy này được tô vàng + ghi "(bạn)" cho dễ nhận ra.
+    ctx.save();
+    ctx.font = 'bold 13px Courier New';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    ctx.fillStyle = (id === myId) ? '#ffe066' : '#fff';
+    const label = (p.name || 'Người chơi') + (id === myId ? ' (bạn)' : '');
+    ctx.strokeText(label, drawX + drawW/2, drawY - 30);
+    ctx.fillText(label, drawX + drawW/2, drawY - 30);
+    ctx.restore();
+  }
+
+  // Hiệu ứng nổi chữ "-xx" khi mất máu
+  drawEffects();
+
+  ctx.restore();
+}
+
+// Chọn đúng ảnh (idle / run frame / shoot / xoạc) theo trạng thái hiện tại của người chơi `p`
+function getCurrentCharImageFor(p) {
+  const c = getCharById(p.charId) || CHARACTERS[0];
+  if (!c) return null;
+  switch (p.animState) {
+    case 'shoot': return c.shootImg;
+    case 'xoac':  return c.xoacImg;
+    case 'run':   return c.runImgs[p.animFrame];
+    case 'jump':  return c.runImgs[1]; // dùng tạm 1 frame chạy cho lúc nhảy
+    default:      return c.img; // idle
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
