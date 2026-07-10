@@ -1,38 +1,53 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- Lock zoom on mobile (pinch-zoom / double-tap-zoom): force scale to always = 1, so the
+     player can't zoom in/out via touch gestures, keeping the map always displayed at 100%. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
 <title>Super Platformer Bros</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<!-- Màn hình chọn chế độ chơi: Solo / Tạo phòng (Host) / Vào phòng (Client) -->
+<!-- Game mode select screen: Solo / Create Room (Host) / Join Room (Client) -->
 <div id="modeScreen">
   <h1>🍄 SUPER PLATFORMER BROS 🍄</h1>
-  <p>Chọn chế độ chơi</p>
+  <p>Choose a game mode</p>
+  <div id="usernameRow">
+    <input id="usernameInput" placeholder="Enter your name" maxlength="20">
+  </div>
   <div class="modeButtons">
-    <button id="modeSoloBtn" class="modeBtn">🧍 Chơi Solo</button>
-    <button id="modeHostBtn" class="modeBtn">👑 Tạo phòng (Host)</button>
-    <button id="modeClientBtn" class="modeBtn">🔑 Vào phòng</button>
+    <button id="modeSoloBtn" class="modeBtn">🧍 Play Solo</button>
+    <button id="modeBotBtn" class="modeBtn">🤖 Team with Bots</button>
+    <button id="modeHostBtn" class="modeBtn">👑 Create Room (Host)</button>
+    <button id="modeClientBtn" class="modeBtn">🔑 Join Room</button>
+  </div>
+  <div id="botCountRow" class="hidden">
+    <p class="subLabel">Choose number of Bot teammates (max 3):</p>
+    <div class="modeButtons">
+      <button class="modeBtn botCountBtn" data-n="1">1 Bot</button>
+      <button class="modeBtn botCountBtn" data-n="2">2 Bots</button>
+      <button class="modeBtn botCountBtn" data-n="3">3 Bots</button>
+    </div>
   </div>
   <div id="joinRow" class="hidden">
-    <input id="joinCodeInput" placeholder="Nhập mã phòng của Host" maxlength="10">
-    <button id="joinConfirmBtn">Kết nối</button>
+    <input id="joinCodeInput" placeholder="Enter the Host's room code" maxlength="10">
+    <button id="joinConfirmBtn">Connect</button>
     <div id="joinError" class="lobbyError"></div>
   </div>
 </div>
 
-<!-- Character select screen (dùng chung cho Solo / Host / Client) -->
+<!-- Character select screen (shared by Solo / Host / Client) -->
 <div id="selectScreen" style="display:none;">
   <h1>🍄 SUPER PLATFORMER BROS 🍄</h1>
-  <p>Chọn nhân vật</p>
+  <p>Choose your character</p>
 
   <div id="lobbyBar" class="hidden">
-    <div id="roomCodeBox" class="hidden">Mã phòng: <b id="roomCodeText">-----</b></div>
+    <div id="roomCodeBox" class="hidden">Room code: <b id="roomCodeText">-----</b></div>
     <div id="lobbyStatus"></div>
     <div id="lobbyPlayerList"></div>
-    <div id="waitingText" class="hidden">Đang chờ Host bấm Bắt Đầu...</div>
+    <div id="waitingText" class="hidden">Waiting for the Host to start...</div>
   </div>
 
   <div id="charGrid"></div>
@@ -45,6 +60,14 @@
   <div id="levelBox">Level: <span id="levelNum">1</span>/<span id="totalLevels">3</span></div>
 </div>
 
+<!-- Chat box: press Enter to open it, type a message, press Enter again to send it.
+     Hidden by default; only appears while the player is actively composing a message. -->
+<div id="chatBox" class="hidden">
+  <input id="chatInput" type="text" maxlength="60" placeholder="Type a message and press Enter...">
+</div>
+
+<div id="teamLivesBox" class="hidden"></div>
+
 <canvas id="game"></canvas>
 
 <div id="levelBanner"></div>
@@ -56,7 +79,7 @@
 <div id="overlay">
   <h2 id="overlayText"></h2>
   <button id="restartBtn" onclick="restartGame()">Play Again</button>
-  <div id="restartWaitText" style="display:none; color:#fff; text-shadow:1px 1px #000;">Chờ Host chơi lại...</div>
+  <div id="restartWaitText" style="display:none; color:#fff; text-shadow:1px 1px #000;">Waiting for the Host to play again...</div>
 </div>
 
 <!--
@@ -75,6 +98,7 @@
 <script src="js/config.js"></script>
 <script src="js/effects.js"></script>
 <script src="js/input.js"></script>
+<script src="js/chat.js"></script>
 <script src="js/net.js"></script>
 <script src="js/characters.js"></script>
 <script src="js/level.js"></script>

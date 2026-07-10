@@ -4,12 +4,14 @@
     overflow: hidden;
     background: linear-gradient(#5c94fc, #a0d8ff);
     font-family: 'Courier New', monospace;
+    touch-action: none; /* chặn thêm pinch-zoom / double-tap-zoom ở tầng CSS */
   }
   #game {
     display: block;
     position: fixed;
     top: 0; left: 0;
     image-rendering: pixelated;
+    touch-action: none;
   }
   #ui {
     position: fixed;
@@ -23,6 +25,27 @@
     pointer-events: none;
   }
   #ui.hidden { display: none; }
+
+  /* ---- Bảng mạng riêng của từng thành viên trong đội (chỉ hiện khi >1 người) ---- */
+  #teamLivesBox {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    color: #fff;
+    text-shadow: 1px 1px #000;
+    font-size: 14px;
+    z-index: 5;
+    pointer-events: none;
+    background: rgba(0,0,0,0.4);
+    border: 2px solid rgba(255,255,255,0.5);
+    border-radius: 8px;
+    padding: 8px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  #teamLivesBox.hidden { display: none; }
+  #teamLivesBox .teamLivesRow { white-space: nowrap; }
 
   /* ---- Bộ đếm xu: chữ xanh lè phát sáng, to hơn các mục khác ---- */
   #coinBox {
@@ -120,6 +143,30 @@
     transition: transform 0.15s, background 0.15s;
   }
   .modeBtn:hover { background: #ff6b67; transform: translateY(-3px); }
+
+  #usernameRow {
+    margin-bottom: 22px;
+  }
+  #usernameRow input {
+    padding: 10px 14px;
+    font-size: 16px;
+    border-radius: 6px;
+    border: 2px solid #fff;
+    font-family: inherit;
+    width: 240px;
+    text-align: center;
+  }
+
+  #botCountRow {
+    margin-top: 8px;
+  }
+  #botCountRow .subLabel {
+    color: #fff;
+    text-shadow: 1px 1px #000;
+    margin-bottom: 14px;
+    font-size: 15px;
+    text-align: center;
+  }
 
   #joinRow {
     margin-top: 26px;
@@ -303,6 +350,30 @@
     font-family: inherit;
   }
   #overlay button:hover { background: #ff6b67; }
+
+  /* ---- In-game chat box: hidden by default, toggled with Enter ---- */
+  #chatBox {
+    position: fixed;
+    bottom: 34px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 40;
+  }
+  #chatBox.hidden { display: none; }
+  #chatBox input {
+    width: 360px;
+    max-width: 70vw;
+    padding: 10px 14px;
+    font-size: 16px;
+    font-family: inherit;
+    border-radius: 8px;
+    border: 3px solid #ffd700;
+    background: rgba(0,0,0,0.65);
+    color: #fff;
+    box-shadow: 0 0 12px rgba(255,215,0,0.7);
+    outline: none;
+  }
+  #chatBox input::placeholder { color: rgba(255,255,255,0.6); }
 
   #info {
     position: fixed;
