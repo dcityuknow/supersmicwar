@@ -142,7 +142,14 @@ const NET = (() => {
     let settled = false; // đã có kết quả (thành công/thất bại) hay chưa, tránh gọi cb/onConnError nhiều lần
     peer.on('open', pid => {
       myPeerId = pid;
-      const conn = peer.connect(hostId, { reliable: true });
+      // QUAN TRỌNG: KHÔNG đặt reliable:true ở đây. Theo tài liệu PeerJS, reliable:true
+      // ép dùng một lớp giả lập (shim) chỉ để hỗ trợ trình duyệt rất cũ (Chrome <=30),
+      // và lớp này "có thể không đạt hiệu năng đầy đủ" - trên thực tế nó gây trễ dồn
+      // dần theo thời gian khi gửi dữ liệu liên tục nhiều lần/giây (đúng như trường hợp
+      // gửi input 60 lần/giây của game này). Không đặt cờ này, trình duyệt hiện đại sẽ
+      // tự dùng kênh dữ liệu gốc (native), vẫn đảm bảo tin cậy + đúng thứ tự, nhưng
+      // không qua lớp giả lập chậm chạp đó.
+      const conn = peer.connect(hostId);
       hostConn = conn;
 
       // Nếu sau CONNECT_TIMEOUT_MS vẫn chưa "open" được (thường do 2 máy không
