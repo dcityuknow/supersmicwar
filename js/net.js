@@ -33,15 +33,42 @@ const NET = (() => {
   // khác nhau có NAT/firewall chặt (mạng công ty, 4G, VPN...) — lúc đó WebRTC
   // không tìm được đường đi trực tiếp và kết nối treo lơ lửng mãi, không báo lỗi.
   // Cần thêm TURN server để "tiếp sức" trong các trường hợp đó.
-  const ICE_CONFIG = {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
-    ]
-  };
+  //
+  // ĐÃ ĐỔI sang lấy credential TURN ĐỘNG từ Metered (gọi API mỗi lần cần kết nối,
+  // credential tự hết hạn sau một thời gian) thay vì hard-code username/password
+  // cố định trong code — an toàn hơn vì không lộ credential vĩnh viễn.
+  const METERED_TURN_API = 'https://smicwar.metered.live/api/v1/turn/credentials?apiKey=2136e6df075ffcbe78022a69b9707669b541';
+
+  // Danh sách STUN dự phòng, dùng khi không gọi được API Metered (mất mạng tới
+  // Metered, key hết hạn...) - vẫn còn STUN nên mạng "dễ tính" vẫn kết nối được,
+  // chỉ mất khả năng vượt NAT/firewall chặt.
+  const FALLBACK_ICE_SERVERS = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ];
+
+  // Gọi API lấy bộ iceServers mới nhất từ Metered. Cache lại trong ít phút để
+  // không gọi API liên tục nếu người dùng bấm Host/Join nhiều lần liên tiếp.
+  let cachedIceServers = null;
+  let cachedAt = 0;
+  const ICE_CACHE_MS = 3 * 60 * 1000; // credential Metered thường sống vài giờ, cache 3 phút cho an toàn
+
+  async function fetchIceServers() {
+    const now = Date.now();
+    if (cachedIceServers && (now - cachedAt) < ICE_CACHE_MS) return cachedIceServers;
+    try {
+      const res = await fetch(METERED_TURN_API);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const servers = await res.json();
+      if (!Array.isArray(servers) || servers.length === 0) throw new Error('empty response');
+      cachedIceServers = servers;
+      cachedAt = now;
+      return servers;
+    } catch (e) {
+      console.warn('[NET] Không lấy được TURN credential từ Metered, dùng STUN dự phòng:', e);
+      return FALLBACK_ICE_SERVERS;
+    }
+  }
 
   function shortRoomCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // bỏ ký tự dễ nhầm (0/O, 1/I)
@@ -50,9 +77,10 @@ const NET = (() => {
     return s;
   }
 
-  function makePeer(customId) {
+  async function makePeer(customId) {
+    const iceServers = await fetchIceServers();
+    const opts = { config: { iceServers } };
     // Peer() không truyền id -> PeerJS tự cấp id ngẫu nhiên (dùng cho client)
-    const opts = { config: ICE_CONFIG };
     return customId ? new Peer(customId, opts) : new Peer(opts);
   }
 
@@ -63,10 +91,10 @@ const NET = (() => {
     roster = { solo: { id: 'solo', name: 'Bạn', charId: null, isHost: true } };
   }
 
-  function initHost(name, cb) {
+  async function initHost(name, cb) {
     mode = 'host';
     const id = 'RM' + shortRoomCode();
-    peer = makePeer(id);
+    peer = await makePeer(id);
     peer.on('open', pid => {
       myPeerId = pid;
       roster = {};
@@ -108,9 +136,9 @@ const NET = (() => {
     return 'Không kết nối được tới phòng (' + (type || String(err)) + ').';
   }
 
-  function initClient(hostId, name, cb) {
+  async function initClient(hostId, name, cb) {
     mode = 'client';
-    peer = makePeer(null);
+    peer = await makePeer(null);
     let settled = false; // đã có kết quả (thành công/thất bại) hay chưa, tránh gọi cb/onConnError nhiều lần
     peer.on('open', pid => {
       myPeerId = pid;
