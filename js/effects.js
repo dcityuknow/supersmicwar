@@ -73,8 +73,63 @@ function drawHealthBar(centerX, topY, hp, maxHp, barW) {
   ctx.strokeRect(x, topY, w, h);
 }
 
+// Draw a glowing gold-bordered chat bubble centered at (centerX, bottomY), with its
+// bottom edge at bottomY (so it sits just above whatever is passed in, e.g. the player's
+// name tag). Box width auto-fits the text.
+function drawChatBubble(centerX, bottomY, text) {
+  ctx.save();
+  ctx.font = 'bold 28px Courier New';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const paddingX = 24, paddingY = 14;
+  const textW = ctx.measureText(text).width;
+  const boxW = textW + paddingX * 2;
+  const boxH = 44 + paddingY;
+  const x = centerX - boxW / 2;
+  const y = bottomY - boxH;
+  const r = 16;
+
+  // Glow
+  ctx.shadowColor = 'rgba(255,215,0,0.9)';
+  ctx.shadowBlur = 22;
+
+  // Bubble background
+  ctx.fillStyle = 'rgba(20,14,0,0.82)';
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + boxW, y, x + boxW, y + boxH, r);
+  ctx.arcTo(x + boxW, y + boxH, x, y + boxH, r);
+  ctx.arcTo(x, y + boxH, x, y, r);
+  ctx.arcTo(x, y, x + boxW, y, r);
+  ctx.closePath();
+  ctx.fill();
+
+  // Gold border
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#ffd700';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+
+  // Small pointer tail toward the name tag below
+  ctx.fillStyle = '#ffd700';
+  ctx.beginPath();
+  ctx.moveTo(centerX - 12, y + boxH);
+  ctx.lineTo(centerX + 12, y + boxH);
+  ctx.lineTo(centerX, y + boxH + 14);
+  ctx.closePath();
+  ctx.fill();
+
+  // Text
+  ctx.fillStyle = '#fff8e0';
+  ctx.fillText(text, centerX, y + boxH / 2);
+
+  ctx.restore();
+}
+
 // Trừ máu người chơi `p`, kèm hiệu ứng (nhiều người chơi -> luôn truyền rõ ai bị trừ máu)
 function damagePlayer(p, amount) {
+  if (p.eliminated) return;
   if (p.hp <= 0) return;
   p.hp -= amount;
   if (p.hp < 0) p.hp = 0;

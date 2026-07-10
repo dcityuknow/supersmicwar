@@ -16,8 +16,16 @@ const joinCodeInput = document.getElementById('joinCodeInput');
 const joinConfirmBtn = document.getElementById('joinConfirmBtn');
 const joinError = document.getElementById('joinError');
 const waitingText = document.getElementById('waitingText');
+const usernameInput = document.getElementById('usernameInput');
+const botCountRow = document.getElementById('botCountRow');
 
-const myDisplayName = 'Người chơi ' + Math.floor(Math.random() * 900 + 100);
+const myDisplayName = 'Player ' + Math.floor(Math.random() * 900 + 100);
+
+// Lấy tên người chơi đã nhập ở ô tên; nếu bỏ trống thì dùng tên ngẫu nhiên mặc định
+function getUsername() {
+  const val = (usernameInput ? usernameInput.value : '').trim();
+  return val ? val.slice(0, 20) : myDisplayName;
+}
 
 function goToCharSelect() {
   modeScreen.style.display = 'none';
@@ -27,51 +35,78 @@ function goToCharSelect() {
 function refreshLobbyUI(rosterList) {
   if (!lobbyPlayerList) return;
   lobbyPlayerList.innerHTML = rosterList.map(r => {
-    const charName = r.charId ? ((getCharById(r.charId) || {}).name || '?') : '(chưa chọn)';
-    const youTag = r.id === NET.myId ? ' (bạn)' : '';
-    return `<div class="lobbyRow">${r.isHost ? '👑 ' : '• '}${r.name || 'Người chơi'}${youTag} — ${charName}</div>`;
+    const charName = r.charId ? ((getCharById(r.charId) || {}).name || '?') : '(not selected)';
+    const youTag = r.id === NET.myId ? ' (you)' : '';
+    const icon = r.isBot ? '🤖 ' : (r.isHost ? '👑 ' : '• ');
+    return `<div class="lobbyRow">${icon}${r.name || 'Player'}${youTag} — ${charName}</div>`;
   }).join('');
 }
 
 // ---------- Chọn chế độ ----------
 document.getElementById('modeSoloBtn').addEventListener('click', () => {
   SFX.unlock();
-  NET.initSolo();
+  NET.initSolo(getUsername());
   lobbyBar.classList.add('hidden');
   joinRow.classList.add('hidden');
-  startBtn.textContent = 'Bắt Đầu';
+  botCountRow.classList.add('hidden');
+  startBtn.textContent = 'Start';
   waitingText.classList.add('hidden');
   goToCharSelect();
+});
+
+// ---------- Team with Bots ----------
+document.getElementById('modeBotBtn').addEventListener('click', () => {
+  SFX.unlock();
+  joinRow.classList.add('hidden');
+  botCountRow.classList.remove('hidden');
+});
+
+document.querySelectorAll('.botCountBtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const n = parseInt(btn.dataset.n, 10);
+    NET.initBotTeam(getUsername(), n);
+    botCountRow.classList.add('hidden');
+    joinRow.classList.add('hidden');
+    roomCodeBox.classList.add('hidden');
+    waitingText.classList.add('hidden');
+    lobbyBar.classList.remove('hidden');
+    lobbyStatus.textContent = 'Your team (Bots will automatically pick different characters):';
+    startBtn.textContent = 'Start';
+    refreshLobbyUI(NET.getRoster());
+    goToCharSelect();
+  });
 });
 
 document.getElementById('modeHostBtn').addEventListener('click', () => {
   SFX.unlock();
   NET.onLobbyUpdate = refreshLobbyUI;
-  NET.onConnError = msg => { lobbyStatus.textContent = 'Lỗi: ' + msg; };
-  lobbyStatus.textContent = 'Đang tạo phòng...';
-  NET.initHost(myDisplayName, (err, id) => {
-    if (err) { lobbyStatus.textContent = 'Không tạo được phòng — kiểm tra kết nối mạng rồi thử lại.'; return; }
+  NET.onConnError = msg => { lobbyStatus.textContent = 'Error: ' + msg; };
+  lobbyStatus.textContent = 'Creating room...';
+  NET.initHost(getUsername(), (err, id) => {
+    if (err) { lobbyStatus.textContent = "Couldn't create the room — check your network connection and try again."; return; }
     roomCodeBox.classList.remove('hidden');
     roomCodeText.textContent = id;
-    lobbyStatus.textContent = 'Gửi mã phòng này cho bạn bè để họ vào chung (tối đa 5 người).';
+    lobbyStatus.textContent = 'Share this room code with friends so they can join (up to 5 players).';
   });
   lobbyBar.classList.remove('hidden');
   joinRow.classList.add('hidden');
-  startBtn.textContent = 'Bắt Đầu (cho cả phòng)';
+  botCountRow.classList.add('hidden');
+  startBtn.textContent = 'Start (for the whole room)';
   waitingText.classList.add('hidden');
   goToCharSelect();
 });
 
 document.getElementById('modeClientBtn').addEventListener('click', () => {
   SFX.unlock();
+  botCountRow.classList.add('hidden');
   joinRow.classList.remove('hidden');
   joinCodeInput.focus();
 });
 
 joinConfirmBtn.addEventListener('click', () => {
   const code = (joinCodeInput.value || '').trim().toUpperCase();
-  if (!code) { joinError.textContent = 'Nhập mã phòng trước đã.'; return; }
-  joinError.textContent = 'Đang kết nối...';
+  if (!code) { joinError.textContent = 'Enter a room code first.'; return; }
+  joinError.textContent = 'Connecting...';
   joinConfirmBtn.disabled = true;
 
   NET.onLobbyUpdate = refreshLobbyUI;
@@ -83,14 +118,14 @@ joinConfirmBtn.addEventListener('click', () => {
   };
   NET.onConnError = msg => { joinError.textContent = msg; joinConfirmBtn.disabled = false; };
 
-  NET.initClient(code, myDisplayName, (err) => {
+  NET.initClient(code, getUsername(), (err) => {
     joinConfirmBtn.disabled = false;
     if (err) {
       // Lý do cụ thể đã được NET.onConnError hiển thị ở trên rồi (peer-unavailable,
       // hết giờ chờ, lỗi mạng...). Chỉ đặt thông báo chung khi vì lý do nào đó
       // onConnError chưa kịp set (tránh mất thông tin chẩn đoán chi tiết).
-      if (!joinError.textContent || joinError.textContent === 'Đang kết nối...') {
-        joinError.textContent = 'Không vào được phòng — kiểm tra lại mã phòng.';
+      if (!joinError.textContent || joinError.textContent === 'Connecting...') {
+        joinError.textContent = "Couldn't join the room — double-check the room code.";
       }
       return;
     }
@@ -102,7 +137,7 @@ joinConfirmBtn.addEventListener('click', () => {
     joinError.textContent = '';
     lobbyBar.classList.remove('hidden');
     roomCodeBox.classList.add('hidden');
-    lobbyStatus.textContent = 'Đã vào phòng ' + code + '.';
+    lobbyStatus.textContent = 'Joined room ' + code + '.';
     waitingText.classList.remove('hidden');
     startBtn.style.display = 'none';
     goToCharSelect();

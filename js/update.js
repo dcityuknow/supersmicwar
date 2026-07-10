@@ -26,34 +26,9 @@ function update() {
 
 // ----- Client: không tính vật lý, chỉ cập nhật camera theo người chơi của mình
 // và tiến hoá các hiệu ứng hình ảnh cục bộ (số "-xx" nổi lên...) -----
-// ----- Client: TỰ DỰ ĐOÁN (client-side prediction) vị trí của CHÍNH MÌNH ngay
-// theo phím đang bấm, không chờ Host phản hồi -> điều khiển luôn mượt bất kể độ
-// trễ mạng (đặc biệt quan trọng khi đi qua TURN relay ở xa, độ trễ round-trip có
-// thể lên tới cả giây). Host vẫn là nơi QUYẾT ĐỊNH cuối cùng: nếu vị trí dự đoán
-// lệch nhiều so với state thật từ Host (do va chạm quái/gai/đạn mà Client không tự
-// tính), sẽ được chỉnh lại êm nhẹ ở applyStateSnapshot() (xem game-state.js).
-// Người chơi KHÁC (không phải mình) vẫn vẽ hoàn toàn theo state nhận từ Host như cũ,
-// vì độ trễ của họ không ảnh hưởng tới cảm giác điều khiển của người đang ngồi máy này.
 function updateClientLocal() {
   const me = players[myId];
   if (me) {
-    stepPlayerInput(me, keys, jumpBuffered);
-    stepPlayerPhysics(me, false); // false: Client không tự quyết "rơi hố mất mạng"
-
-    // Xác định hoạt ảnh cục bộ luôn, không chờ Host báo về (tương tự cuối
-    // runAuthoritativeUpdate() bên Host) để nhân vật phản hồi tức thì khi chạy/nhảy.
-    if (me.shootTimer > 0) me.animState = 'shoot';
-    else if (me.xoacTimer > 0) me.animState = 'xoac';
-    else if (!me.onGround) me.animState = 'jump';
-    else if (Math.abs(me.vx) > 0.6) me.animState = 'run';
-    else me.animState = 'idle';
-    if (me.animState === 'run') {
-      me.animTimer++;
-      if (me.animTimer >= 5) { me.animTimer = 0; me.animFrame = (me.animFrame + 1) % 4; }
-    } else {
-      me.animTimer = 0; me.animFrame = 0;
-    }
-
     camX = me.x - W / 2 + me.w / 2;
     if (camX < 0) camX = 0;
     if (camX > levelWidth - W) camX = levelWidth - W;
@@ -84,8 +59,8 @@ function stepPlayerInput(p, k, jumpPulse) {
   if (p.xoacTimer > 0) {
     p.vx = p.facing * p.speed * XOAC_SPEED_MULT;
   } else if (!isActing) {
-    if (k['ArrowLeft']) { p.vx -= 3.8; p.facing = -1; }
-    if (k['ArrowRight']) { p.vx += 3.8; p.facing = 1; }
+    if (k['ArrowLeft']) { p.vx -= (p.moveAccel || 3.8); p.facing = -1; }
+    if (k['ArrowRight']) { p.vx += (p.moveAccel || 3.8); p.facing = 1; }
   }
   p.vx *= FRICTION;
   const maxSpeed = p.speed * (p.xoacTimer > 0 ? XOAC_SPEED_MULT : 1);
@@ -104,8 +79,7 @@ function stepPlayerInput(p, k, jumpPulse) {
   }
 }
 
-function stepPlayerPhysics(p, canLoseLife) {
-  if (canLoseLife === undefined) canLoseLife = true;
+function stepPlayerPhysics(p) {
   p.vy += GRAVITY;
   if (p.vy > 18) p.vy = 18;
 
@@ -137,19 +111,294 @@ function stepPlayerPhysics(p, canLoseLife) {
     }
   }
 
-  // canLoseLife=false khi Client tự dự đoán cục bộ (xem updateClientLocal): Client
-  // không có quyền tự quyết "rơi hố mất mạng", chỉ Host mới được quyết việc đó.
-  // Client vẫn rơi tiếp về mặt hình ảnh cho tới khi nhận state chính thức từ Host.
-  if (canLoseLife && p.y > H + 200) loseLife(p);
+  if (p.y > H + 200) loseLife(p);
   if (p.invincible > 0) p.invincible--;
 }
 
-// ----- Mô phỏng đầy đủ 1 frame cho toàn bộ thế giới (chỉ Host/Solo gọi) -----
+// ----- AI cho Bot đồng đội (chế độ "Team với Bot") -----
+// Bot tự quyết định phím bấm mỗi frame, y hệt như input của người chơi thật, rồi
+// được đưa qua đúng stepPlayerInput/stepPlayerPhysics dùng chung với người chơi.
+
+// Kiểm tra có nền (platform) ngay dưới 1 điểm cách xa `p` một khoảng `aheadDist`
+// hay không - dùng để bot né rơi xuống hố phía trước.
+function isGroundAhead(p, aheadDist) {
+  const testX = p.x + p.w / 2 + aheadDist;
+  const testY = p.y + p.h + 24;
+  for (const pf of level.platforms) {
+    if (testX >= pf.x && testX <= pf.x + pf.w && testY >= pf.y && testY <= pf.y + pf.h + 40) return true;
+  }
+  return false;
+}
+
+// Băm chuỗi id thành số nguyên ổn định, dùng làm "hạt giống" riêng cho từng Bot để mỗi
+// Bot có một chút cá tính khác nhau, thay vì hành xử y hệt bản sao của nhau.
+function hashId(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+// Trong số TẤT CẢ người chơi (kể cả người thật) đang trong tầm `maxRange` của `target`,
+// tìm người đứng gần nó nhất - đó sẽ là người "có trách nhiệm" xử lý mục tiêu này.
+// Dùng để tránh việc cả team dồn hết vào đánh chung 1 con quái vặt.
+function findClosestDefender(target, maxRange) {
+  let best = null, bestDist = Infinity;
+  for (const id in players) {
+    const p = players[id];
+    if (p.eliminated) continue;
+    const d = Math.abs((target.x + target.w / 2) - (p.x + p.w / 2));
+    if (d < maxRange && d < bestDist) { bestDist = d; best = p; }
+  }
+  return best;
+}
+
+function computeBotInput(p) {
+  const k = { ArrowLeft: false, ArrowRight: false, KeyZ: false, KeyX: false };
+  let jump = false;
+
+  // ----- Cá tính riêng của từng Bot, gán 1 LẦN DUY NHẤT khi gặp bot này lần đầu, dựa
+  // trên id (ổn định suốt trận, không đổi theo frame) - để bot không hành xử như bản
+  // sao rập khuôn của nhau, mà mỗi con có "kiểu" riêng, y như người chơi thật khác nhau:
+  //   'kicker'  : điềm tĩnh, đứng chờ 1 chút lúc đầu trận rồi mới di chuyển, thích đá (Z)
+  //   'slasher' : máu chiến, xoạc (X) thử vài phát ngay lúc đầu trận, thích xoạc khi đánh
+  //   'stomper' : hiếu động, nhảy lung tung lúc đầu trận, thích nhảy lên đầu quái thay vì đá/xoạc
+  //   'avoider' : nóng vội, không chờ gì cả mà chạy thẳng luôn, phần lớn né đánh nhau, tập trung tiến lên
+  if (p._botSeed === undefined) {
+    p._botSeed = hashId(p.id);
+    const styles = ['kicker', 'slasher', 'stomper', 'avoider'];
+    p._botStyle = styles[p._botSeed % styles.length];
+    // Độ trễ khởi động lúc đầu trận (đơn vị: frame, ~20-110 frame tức 0.3-1.8 giây ở 60fps),
+    // lệch nhau theo từng bot để không đứa nào bắt đầu chạy/nhảy/tấn công cùng lúc.
+    p._botStartDelay = 20 + (p._botSeed % 90);
+    p._botFlavorFrame = Math.floor(p._botStartDelay * (0.3 + (p._botSeed % 40) / 100));
+  }
+  const seed = p._botSeed;
+  const style = p._botStyle;
+  const aggroJitter = 0.85 + (seed % 30) / 100; // ~0.85 - 1.14, mỗi bot vào tầm giao tranh hơi khác nhau 1 chút
+
+  // ----- Giai đoạn "mới vào trận": mỗi bot phản ứng khác nhau tuỳ cá tính, để không
+  // đứa nào giống đứa nào ngay từ giây đầu tiên (thay vì cả bầy cùng chạy/nhảy/đánh) -----
+  if (gameFrame < p._botStartDelay) {
+    const k0 = { ArrowLeft: false, ArrowRight: false, KeyZ: false, KeyX: false };
+    let jump0 = false;
+    if (style === 'kicker') {
+      // đứng yên chờ, thử đá 1 phát cho có khí thế rồi lại đứng im
+      if (gameFrame === p._botFlavorFrame) k0.KeyZ = true;
+    } else if (style === 'slasher') {
+      if (gameFrame === p._botFlavorFrame) k0.KeyX = true;
+    } else if (style === 'stomper') {
+      if (gameFrame === p._botFlavorFrame) jump0 = true;
+    } else {
+      // avoider: không chờ đợi gì cả, chạy thẳng luôn ngay từ giây đầu
+      k0.ArrowRight = true;
+    }
+    return { keys: k0, jump: jump0 };
+  }
+
+  const ATTACK_RANGE = 220;
+  const DEAD_ZONE = 50;
+
+  // ----- Ưu tiên số 1: Rồng canh giữ (mục tiêu chính) - hễ vào tầm là dồn sức đánh,
+  // không cần xét "ai gần nhất" như quái thường, vì hạ được boss mới là mục tiêu chính -----
+  const BOSS_PRIORITY_RANGE = 1400;
+  let target = null, targetDist = Infinity;
+  const isBossTarget = !!(level.boss && level.boss.alive &&
+    Math.abs((level.boss.x + level.boss.w / 2) - (p.x + p.w / 2)) < BOSS_PRIORITY_RANGE);
+  if (isBossTarget) {
+    target = level.boss;
+    targetDist = Math.abs((level.boss.x + level.boss.w / 2) - (p.x + p.w / 2));
+  }
+
+  // ----- Chưa tới lúc lo boss -> tìm quái thường ĐÁNG đánh (engageWorth) gần nhất, và
+  // CHỈ nhận đánh nếu chính mình là người gần nó nhất trong cả team. Nếu có đồng đội khác
+  // (bot hoặc người thật) gần hơn thì coi như "đã có người lo", mình cứ tiếp tục tiến lên.
+  // Riêng bot kiểu 'avoider' thường sẽ né hẳn, không thèm đánh dù có là người gần nhất. -----
+  if (!target) {
+    let bestEnemy = null, bestDist = Infinity;
+    for (const e of level.enemies) {
+      if (!e.alive || e.engageWorth === false) continue;
+      const d = Math.abs((e.x + e.w / 2) - (p.x + p.w / 2));
+      if (d < bestDist) { bestDist = d; bestEnemy = e; }
+    }
+    if (bestEnemy) {
+      const AGGRO_RANGE = 1000 * aggroJitter;
+      if (bestDist < AGGRO_RANGE) {
+        const defender = findClosestDefender(bestEnemy, AGGRO_RANGE);
+        if (!defender || defender.id === p.id) {
+          let takeIt = true;
+          if (style === 'avoider') {
+            // Quyết định né hay không CHỈ 1 LẦN cho mỗi cặp (quái này, bot này), tránh
+            // đổi ý liên tục mỗi frame trông sẽ rất giả/máy móc.
+            if (!bestEnemy._avoiderSkip) bestEnemy._avoiderSkip = {};
+            if (bestEnemy._avoiderSkip[p.id] === undefined) {
+              bestEnemy._avoiderSkip[p.id] = Math.random() < 0.6;
+            }
+            takeIt = !bestEnemy._avoiderSkip[p.id];
+          }
+          if (takeIt) { target = bestEnemy; targetDist = bestDist; }
+        }
+      }
+    }
+  }
+
+  // Mặc định LUÔN tự tiến về phía cờ đích (bên phải), hoàn toàn không cần chờ
+  // hay bám theo người chơi chính — bot có thể tự đi trước, tự khám phá màn chơi.
+  let dir = 1;
+  let wantAttack = false;
+  let wantStompJump = false;
+
+  if (target) {
+    if (isBossTarget && target.phase === 'fire' && targetDist < target.w * 1.3) {
+      // Boss đang khạc lửa và mình đang trong tầm -> lùi ra xa thay vì lao vào chịu trận
+      dir = (p.x < target.x) ? -1 : 1;
+    } else {
+      const dx = (target.x + target.w / 2) - (p.x + p.w / 2);
+      dir = Math.abs(dx) > DEAD_ZONE ? (dx > 0 ? 1 : -1) : 0;
+      if (targetDist < ATTACK_RANGE) {
+        // Với boss thì luôn đá/xoạc như cũ (boss bay, không "dẫm đầu" được). Với quái
+        // thường, mỗi kiểu bot chọn cách khác nhau: kicker thích đá, slasher thích xoạc,
+        // stomper thử nhảy lên đầu quái, avoider (lỡ vào thế phải đánh) thì đá đại cho xong.
+        if (!isBossTarget && style === 'stomper') wantStompJump = true;
+        else wantAttack = true;
+      }
+      // Đang xả loạt đạn -> thỉnh thoảng nhảy né ngẫu nhiên
+      if (isBossTarget && target.phase === 'barrage' && Math.random() < 0.035) jump = true;
+    }
+  }
+
+  if (dir > 0) k.ArrowRight = true;
+  else if (dir < 0) k.ArrowLeft = true;
+  if (wantAttack) {
+    if (style === 'kicker') k.KeyZ = true;
+    else if (style === 'slasher') k.KeyX = true;
+    else if (Math.random() < 0.5) k.KeyZ = true; else k.KeyX = true;
+  }
+  if (wantStompJump) jump = true; // thử nhảy lên đầu quái thay vì đá/xoạc
+
+
+  // Né chướng ngại vật khi đang đứng đất và đang thực sự di chuyển theo 1 hướng
+  if (p.onGround && dir !== 0) {
+    const lookAheadX = p.x + p.w / 2 + dir * 140;
+    for (const s of level.spikes) {
+      if (lookAheadX > s.x && lookAheadX < s.x + s.w) { jump = true; break; }
+    }
+    // Không phải đang lao tới để đánh (không có mục tiêu, hoặc mục tiêu là con khác) mà
+    // phía trước có quái chắn đường -> nhảy qua luôn thay vì đứng lại choảng nhau, để
+    // dành việc đánh cho đồng đội đang "có trách nhiệm" với con đó (hoặc bỏ qua hẳn).
+    if (!jump && !wantAttack) {
+      for (const e of level.enemies) {
+        if (!e.alive || e === target) continue;
+        if (lookAheadX > e.x - 20 && lookAheadX < e.x + e.w + 20) { jump = true; break; }
+      }
+    }
+    if (!jump && !isGroundAhead(p, dir * 130)) jump = true; // hố phía trước -> nhảy qua
+    if (!jump) {
+      if (Math.abs(p.vx) < 0.4) {
+        p._botStuckTimer = (p._botStuckTimer || 0) + 1;
+        if (p._botStuckTimer > 6) { jump = true; p._botStuckTimer = 0; } // bị kẹt -> nhảy thử thoát kẹt
+      } else {
+        p._botStuckTimer = 0;
+      }
+    }
+  } else if (dir === 0) {
+    p._botStuckTimer = 0;
+  }
+
+  // Đang ở giữa không trung, đang rơi, và phía trước vẫn là hố rộng -> tự bấm nhảy đôi
+  // để vượt qua thay vì rơi xuống chết oan (chỉ dùng khi còn lượt nhảy thứ 2).
+  if (!p.onGround && p.vy > 0 && dir !== 0 && p.jumpsUsed < 2 && !isGroundAhead(p, dir * 170)) {
+    jump = true;
+  }
+
+  return { keys: k, jump: jump };
+}
+
+// ----- Bot chat: bots occasionally say something contextual (about the boss fight,
+// low HP, coins, spikes, general encouragement...) so the team chat doesn't feel empty
+// when playing with Bot teammates. Purely local — no network relay needed, since Bot
+// mode never has other real machines connected. -----
+const BOT_CHAT_LINES = {
+  bossNear: [
+    "Get the dragon!", "Focus fire on the dragon!", "Watch out, it's about to attack!",
+    "Dodge the fire breath!", "We're almost there, keep hitting it!", "Incoming barrage, watch out!"
+  ],
+  bossDown: [
+    "We beat the Guardian Dragon!", "Dragon down! Let's move on!", "GG on that dragon!"
+  ],
+  lowHp: [
+    "I'm low on HP!", "Ouch, that hurt!", "Need to be careful here...", "I could use a coin or two right now!"
+  ],
+  spikesAhead: [
+    "Watch out for the spikes!", "Careful, spikes ahead!", "Jump, spikes!"
+  ],
+  general: [
+    "Let's keep moving!", "This way!", "Nice one!", "Almost to the flag!",
+    "Grab those coins!", "Follow me!", "Looking good, team!", "Watch your step here."
+  ]
+};
+
+function pickBotLine(pool) {
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function maybeBotChat(p) {
+  if (typeof receiveChatMessage !== 'function') return;
+
+  if (p.botChatCooldown === undefined) {
+    // Stagger each bot's first line so they don't all talk at once when a level starts
+    p.botChatCooldown = 90 + Math.floor(Math.random() * 240);
+  }
+  if (p.botChatCooldown > 0) { p.botChatCooldown--; return; }
+
+  // Reset cooldown for next time regardless of whether we actually say something,
+  // so a bot that stays quiet this round doesn't spam-check every single frame.
+  p.botChatCooldown = 360 + Math.floor(Math.random() * 220); // ~6-13s between lines
+
+  const boss = level.boss;
+  const nearBoss = boss && boss.alive &&
+    Math.abs((boss.x + boss.w / 2) - (p.x + p.w / 2)) < 900;
+
+  let pool;
+  if (boss && !boss.alive && p._botSawBossAlive) {
+    pool = BOT_CHAT_LINES.bossDown;
+    p._botSawBossAlive = false;
+  } else if (nearBoss) {
+    p._botSawBossAlive = true;
+    pool = BOT_CHAT_LINES.bossNear;
+  } else if (p.hp < p.maxHp * 0.35) {
+    pool = BOT_CHAT_LINES.lowHp;
+  } else {
+    // small chance to comment on spikes just ahead, otherwise general chatter
+    const lookAheadX = p.x + p.w / 2 + p.facing * 160;
+    const spikeAhead = level.spikes.some(s => lookAheadX > s.x && lookAheadX < s.x + s.w);
+    pool = spikeAhead ? BOT_CHAT_LINES.spikesAhead : BOT_CHAT_LINES.general;
+  }
+
+  // Don't say something every single time the cooldown fires — keeps chat from
+  // feeling too chatty/robotic.
+  if (Math.random() < 0.7) {
+    receiveChatMessage(p.id, pickBotLine(pool));
+  }
+}
+
+
 function runAuthoritativeUpdate() {
   for (const id in players) {
     const p = players[id];
-    const inputKeys = (id === myId) ? keys : (p.remoteKeys || {});
-    const inputJump = (id === myId) ? jumpBuffered : !!p.remoteJumpPulse;
+    if (p.eliminated) continue; // đã hết mạng -> ra khỏi trận, không còn được điều khiển/mô phỏng nữa
+    let inputKeys, inputJump;
+    if (id === myId) {
+      inputKeys = keys;
+      inputJump = jumpBuffered;
+    } else if (p.isBot) {
+      const botInput = computeBotInput(p);
+      inputKeys = botInput.keys;
+      inputJump = botInput.jump;
+      maybeBotChat(p);
+    } else {
+      inputKeys = p.remoteKeys || {};
+      inputJump = !!p.remoteJumpPulse;
+    }
     stepPlayerInput(p, inputKeys, inputJump);
     stepPlayerPhysics(p);
     if (id !== myId) p.remoteJumpPulse = false;
@@ -160,6 +409,7 @@ function runAuthoritativeUpdate() {
   const shootBoxes = {};
   for (const id in players) {
     const p = players[id];
+    if (p.eliminated) continue;
     if (p.shootTimer > 0) {
       const boxW = 130;
       shootBoxes[id] = {
@@ -209,11 +459,12 @@ function runAuthoritativeUpdate() {
 
     for (const id in players) {
       const p = players[id];
+      if (p.eliminated) continue;
       const hitByXoac = p.xoacTimer > 0 && rectsOverlap(p, e);
       const hitByShoot = shootBoxes[id] && rectsOverlap(shootBoxes[id], e);
 
       if ((hitByXoac || hitByShoot) && e.hitCooldown <= 0) {
-        const dmg = hitByXoac ? XOAC_DAMAGE : KICK_DAMAGE;
+        const dmg = hitByXoac ? (p.xoacDamage || XOAC_DAMAGE) : (p.kickDamage || KICK_DAMAGE);
         const dead = damageEnemy(e, dmg);
         SFX.hitEnemy();
         e.hitCooldown = ENEMY_HIT_COOLDOWN;
@@ -261,6 +512,7 @@ function runAuthoritativeUpdate() {
     let hit = false;
     for (const id in players) {
       const p = players[id];
+      if (p.eliminated) continue;
       if (p.invincible > 0) continue;
       const hitPlayerBox = { x: b.x - b.r, y: b.y - b.r, w: b.r * 2, h: b.r * 2 };
       if (rectsOverlap(hitPlayerBox, p)) {
@@ -277,6 +529,7 @@ function runAuthoritativeUpdate() {
   // Giảm dần thời gian pose sút/xoạc + kiểm tra gai, cho từng người chơi
   for (const id in players) {
     const p = players[id];
+    if (p.eliminated) continue;
     if (p.shootTimer > 0) p.shootTimer--;
     if (p.xoacTimer > 0) p.xoacTimer--;
 
@@ -305,6 +558,7 @@ function runAuthoritativeUpdate() {
     if (c.taken) continue;
     const coinRect = { x: c.x, y: c.y, w: 72, h: 72 };
     for (const id in players) {
+      if (players[id].eliminated) continue;
       if (rectsOverlap(players[id], coinRect)) {
         c.taken = true;
         coinsCollected++;
@@ -321,12 +575,13 @@ function runAuthoritativeUpdate() {
   if (level.flagWarnCooldown > 0) level.flagWarnCooldown--;
   let anyOnFlag = false;
   for (const id in players) {
+    if (players[id].eliminated) continue;
     if (rectsOverlap(players[id], level.flag)) { anyOnFlag = true; break; }
   }
   if (anyOnFlag) {
     if (level.boss && level.boss.alive) {
       if (level.flagWarnCooldown <= 0) {
-        showLevelBanner('Hạ Rồng canh giữ trước đã!');
+        showLevelBanner('Defeat the Guardian Dragon first!');
         level.flagWarnCooldown = 100;
       }
     } else {

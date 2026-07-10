@@ -57,7 +57,7 @@ function getBossMouthPos(boss) {
 function createBoss(lvl, levelNum) {
   const diff = getBossDifficulty(levelNum);
   const flag = lvl.flag;
-  const baseW = 340, baseH = 260;
+  const baseW = 510, baseH = 390; // kích thước gốc của rồng ở màn 1 (đã tăng 1.5x so với trước: 340x260 -> 510x390)
   const w = baseW * diff.sizeMult;
   const h = baseH * diff.sizeMult;
 
@@ -67,10 +67,12 @@ function createBoss(lvl, levelNum) {
   const minX = maxX - ARENA_WIDTH;
 
   return {
-    x: maxX, y: lvl.groundY - 620 * diff.sizeMult,
+    // Tăng offset độ cao bay (620 -> 750) tương ứng với việc thân rồng cao hơn (baseH tăng
+    // 260 -> 390), để giữ nguyên khoảng hở phía dưới thân rồng so với mặt đất như trước.
+    x: maxX, y: lvl.groundY - 750 * diff.sizeMult,
     w: w, h: h,
     minX: minX, maxX: maxX,
-    baseFlyY: lvl.groundY - 620 * diff.sizeMult,
+    baseFlyY: lvl.groundY - 750 * diff.sizeMult,
     levelNum: levelNum,
     diff: diff,
 
@@ -98,6 +100,7 @@ function getNearestPlayer(boss) {
   let best = null, bestDist = Infinity;
   for (const id in players) {
     const p = players[id];
+    if (p.eliminated) continue;
     const d = Math.abs((p.x + p.w / 2) - (boss.x + boss.w / 2));
     if (d < bestDist) { bestDist = d; best = p; }
   }
@@ -141,6 +144,7 @@ function applyBossFireDamage(boss) {
   };
   for (const id in players) {
     const p = players[id];
+    if (p.eliminated) continue;
     if (rectsOverlap(p, fireBox)) damagePlayer(p, BOSS_FIRE_DAMAGE);
   }
 }
@@ -158,17 +162,18 @@ function updateBoss(shootBoxes) {
   // ----- Người chơi tấn công trúng rồng (sút / xoạc), y hệt cách đánh quái thường -----
   for (const id in players) {
     const p = players[id];
+    if (p.eliminated) continue;
     const hitByXoac = p.xoacTimer > 0 && rectsOverlap(p, boss);
     const hitByShoot = shootBoxes[id] && rectsOverlap(shootBoxes[id], boss);
     if ((hitByXoac || hitByShoot) && boss.hitCooldown <= 0) {
-      const dmg = hitByXoac ? XOAC_DAMAGE : KICK_DAMAGE;
+      const dmg = hitByXoac ? (p.xoacDamage || XOAC_DAMAGE) : (p.kickDamage || KICK_DAMAGE);
       const dead = damageEnemy(boss, dmg);
       SFX.hitEnemy();
       boss.hitCooldown = BOSS_HIT_COOLDOWN;
       if (dead) {
         boss.alive = false;
         score += 1000;
-        showLevelBanner('HẠ GỤC RỒNG CANH GIỮ!');
+        showLevelBanner('GUARDIAN DRAGON DEFEATED!');
         return;
       }
       break;
@@ -338,7 +343,7 @@ function drawBoss() {
   ctx.strokeStyle = '#000';
   ctx.lineWidth = 3;
   ctx.fillStyle = '#fff';
-  ctx.strokeText('RỒNG CANH GIỮ', x + w / 2, y - 46);
-  ctx.fillText('RỒNG CANH GIỮ', x + w / 2, y - 46);
+  ctx.strokeText('GUARDIAN DRAGON', x + w / 2, y - 46);
+  ctx.fillText('GUARDIAN DRAGON', x + w / 2, y - 46);
   ctx.restore();
 }

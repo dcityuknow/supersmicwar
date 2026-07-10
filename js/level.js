@@ -80,7 +80,13 @@ function scaleEnemiesForLevel(baseEnemies, multiplier, difficulty) {
         hp: ENEMY_MAX_HP, maxHp: ENEMY_MAX_HP,
         hitCooldown: 0, flashTimer: 0,
         shootCooldown,
-        animSeed: Math.random() * 100
+        animSeed: Math.random() * 100,
+        // Quyết định một lần duy nhất khi sinh ra: con quái này có "đáng" để Bot dừng lại
+        // đánh hay không (~70% có, 30% không). Cố định ngay từ đầu (không đổi theo frame)
+        // để Bot không nhấp nháy đổi ý - những con "không đáng" sẽ bị cả team lờ đi luôn,
+        // chỉ tránh né/nhảy qua chứ không dừng lại đánh, giữ đúng trọng tâm là tiến về
+        // phía Rồng canh giữ.
+        engageWorth: Math.random() < 0.7
       });
     }
   });

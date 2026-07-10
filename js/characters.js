@@ -13,13 +13,29 @@
 //   rocky/rocky-shoot.png  -> sút
 //   rocky/rocky-xoac.png   -> xoạc
 // Tương tự cho spider/, noxx/, keng/, xealist/ ...
+// ----- Chỉ số riêng (multiplier) của từng nhân vật -----
+// Các trường dưới đây là hệ số NHÂN so với chỉ số gốc (mặc định = 1 nếu không ghi):
+//   hpMult     : nhân máu tối đa (PLAYER_MAX_HP)
+//   sizeMult   : nhân kích thước (cả hitbox lẫn hình vẽ, vì hình vẽ luôn tỉ lệ theo hitbox)
+//   speedMult  : nhân tốc độ di chuyển
+//   damageMult : nhân sát thương gây ra khi sút (Z) / xoạc (X)
+// Nhân vật không khai báo trường nào -> dùng mặc định 1 (chỉ số gốc, không đổi).
 const CHARACTERS = [
-  { id: 'spider',   name: 'Spider'   },
+  // Spider: nhanh nhẹn, đánh mạnh - tốc độ di chuyển x2, sát thương x2 so với nhân vật thường
+  { id: 'spider',   name: 'Spider',  speedMult: 2, damageMult: 2 },
   { id: 'noxx',     name: 'Noxx'     },
   { id: 'keng',     name: 'Keng'     },
   { id: 'xealist',  name: 'Xealist'  },
-  { id: 'rocky',    name: 'Rocky'    },
+  // Rocky: tanker - chỉ máu trâu (x2), kích thước giữ nguyên như bình thường
+  { id: 'rocky',    name: 'Rocky',   hpMult: 2 },
 ];
+
+// Lấy chỉ số (hệ số riêng) theo charId, dùng giá trị mặc định 1 nếu nhân vật không
+// khai báo hệ số đó (tức không đổi so với chỉ số gốc).
+function getCharStatMult(charId, key) {
+  const c = getCharById(charId);
+  return (c && typeof c[key] === 'number') ? c[key] : 1;
+}
 
 const flagImg = new Image();
 flagImg.src = 'flag.png';
@@ -82,6 +98,9 @@ CHARACTERS.forEach(c => {
     // Báo cho Host (hoặc chính mình nếu đang là Host/Solo) biết mình vừa chọn nhân vật gì,
     // để mọi người trong phòng thấy đúng lựa chọn của nhau.
     NET.sendMyChar(c.id);
+    // Chế độ Team với Bot: mỗi khi mình đổi nhân vật, xếp lại nhân vật cho các Bot
+    // để đảm bảo không có Bot nào trùng nhân vật với mình hoặc với nhau.
+    if (NET.mode === 'bot') NET.assignBotCharacters(CHARACTERS);
     if (typeof refreshLobbyUI === 'function') refreshLobbyUI(NET.getRoster());
   });
   charGrid.appendChild(card);

@@ -25,15 +25,6 @@ const NET = (() => {
   let broadcastCounter = 0;
   const BROADCAST_EVERY = 2; // gửi state ~30 lần/giây (game chạy ~60fps)
 
-  // Ngưỡng số byte đang CÒN KẸT trong hàng đợi gửi (chưa thoát khỏi máy) của 1 kết nối.
-  // State là dữ liệu "thay được" - gói mới luôn đủ dùng, mất gói cũ không sao. Nếu hàng
-  // đợi gửi của 1 client đang đầy (mạng người đó đang nghẽn), ta THÀ BỎ QUA state của
-  // tick này CHO RIÊNG client đó, còn hơn xếp chồng thêm dữ liệu cũ lên hàng đợi khiến
-  // độ trễ ngày càng DỒN DẦN theo thời gian (bufferbloat) - đúng kiểu lag "càng chơi
-  // càng nặng" thay vì lag ổn định. Mỗi client được đánh giá độc lập theo mạng của
-  // chính nó, không ảnh hưởng tới các client khác đang mượt.
-  const STATE_BACKPRESSURE_LIMIT = 16384;
-
   // Thời gian tối đa (ms) Client chờ Host phản hồi trước khi báo lỗi,
   // thay vì treo mãi ở "Đang kết nối..." khi 2 máy không thể bắt tay P2P được.
   const CONNECT_TIMEOUT_MS = 15000;
@@ -74,7 +65,7 @@ const NET = (() => {
       cachedAt = now;
       return servers;
     } catch (e) {
-      console.warn('[NET] Không lấy được TURN credential từ Metered, dùng STUN dự phòng:', e);
+      console.warn('[NET] Could not get TURN credentials from Metered, falling back to STUN:', e);
       return FALLBACK_ICE_SERVERS;
     }
   }
@@ -94,10 +85,43 @@ const NET = (() => {
   }
 
   // ---------- Khởi tạo theo từng chế độ ----------
-  function initSolo() {
+  function initSolo(name) {
     mode = 'solo';
     myPeerId = 'solo';
-    roster = { solo: { id: 'solo', name: 'Bạn', charId: null, isHost: true } };
+    roster = { solo: { id: 'solo', name: name || 'You', charId: null, isHost: true } };
+  }
+
+  // Chế độ chơi cùng đồng đội máy (Bot). Vẫn chạy hoàn toàn cục bộ (không qua mạng),
+  // chỉ khác Solo ở chỗ có thêm 1-3 người chơi "ảo" do máy điều khiển trong `players`.
+  function initBotTeam(name, botCount) {
+    mode = 'bot';
+    myPeerId = 'solo';
+    const n = Math.max(1, Math.min(3, botCount || 1));
+    roster = { solo: { id: 'solo', name: name || 'You', charId: null, isHost: true, isBot: false } };
+    for (let i = 1; i <= n; i++) {
+      const bid = 'bot' + i;
+      roster[bid] = { id: bid, name: 'Bot ' + i, charId: null, isHost: false, isBot: true };
+    }
+  }
+
+  // Gán ngẫu nhiên cho mỗi Bot 1 nhân vật KHÁC nhân vật người chơi và KHÁC nhau
+  // giữa các Bot. Gọi lại mỗi khi người chơi đổi nhân vật để luôn đảm bảo không trùng.
+  function assignBotCharacters(characterList) {
+    if (mode !== 'bot') return;
+    const humanCharId = roster[myPeerId] ? roster[myPeerId].charId : null;
+    const pool = characterList.map(c => c.id).filter(id => id !== humanCharId);
+    // xáo trộn ngẫu nhiên (Fisher-Yates)
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+    }
+    let idx = 0;
+    for (const id in roster) {
+      if (roster[id].isBot) {
+        roster[id].charId = pool.length ? pool[idx % pool.length] : characterList[0].id;
+        idx++;
+      }
+    }
   }
 
   async function initHost(name, cb) {
@@ -114,7 +138,7 @@ const NET = (() => {
     peer.on('connection', conn => {
       clientConns[conn.peer] = conn;
       conn.on('open', () => {
-        if (!roster[conn.peer]) roster[conn.peer] = { id: conn.peer, name: 'Người chơi', charId: null, isHost: false };
+        if (!roster[conn.peer]) roster[conn.peer] = { id: conn.peer, name: 'Player', charId: null, isHost: false };
         broadcastLobby();
       });
       conn.on('data', data => handleHostData(conn.peer, data));
@@ -134,15 +158,15 @@ const NET = (() => {
   function friendlyPeerErrorMessage(err) {
     const type = err && err.type;
     if (type === 'peer-unavailable') {
-      return 'Không tìm thấy phòng với mã này. Kiểm tra lại: Host còn đang mở trang (chưa tắt/reload) và mã phòng gõ đúng (không dư khoảng trắng).';
+      return "Room not found with this code. Check that the Host still has the page open (not closed/reloaded) and that the room code is typed correctly (no extra spaces).";
     }
     if (type === 'network' || type === 'server-error' || type === 'socket-error' || type === 'socket-closed') {
-      return 'Không kết nối được tới máy chủ ghép nối. Kiểm tra lại mạng, hoặc adblock/firewall có thể đang chặn PeerJS.';
+      return "Couldn't connect to the matchmaking server. Check your network, or an ad blocker/firewall might be blocking PeerJS.";
     }
     if (type === 'browser-incompatible') {
-      return 'Trình duyệt này không hỗ trợ WebRTC. Thử trình duyệt khác (Chrome, Edge, Firefox bản mới).';
+      return "This browser doesn't support WebRTC. Try another browser (Chrome, Edge, or a recent Firefox).";
     }
-    return 'Không kết nối được tới phòng (' + (type || String(err)) + ').';
+    return "Couldn't connect to the room (" + (type || String(err)) + ").";
   }
 
   async function initClient(hostId, name, cb) {
@@ -167,7 +191,7 @@ const NET = (() => {
       const timeoutId = setTimeout(() => {
         if (settled) return;
         settled = true;
-        if (onConnError) onConnError('Không kết nối được tới phòng (quá thời gian chờ). Kiểm tra lại mã phòng, hoặc thử đổi mạng (một số mạng công ty/wifi công cộng chặn kết nối P2P).');
+        if (onConnError) onConnError("Couldn't connect to the room (timed out). Check the room code, or try a different network (some corporate/public wifi networks block P2P connections).");
         cb(new Error('connect-timeout'), null);
         try { conn.close(); } catch (e) {}
       }, CONNECT_TIMEOUT_MS);
@@ -176,11 +200,11 @@ const NET = (() => {
         if (settled) return;
         settled = true;
         clearTimeout(timeoutId);
-        conn.send({ t: 'join', name: name || 'Người chơi' });
+        conn.send({ t: 'join', name: name || 'Player' });
         cb(null, pid);
       });
       conn.on('data', data => handleClientData(data));
-      conn.on('close', () => { if (onConnError) onConnError('Mất kết nối tới phòng.'); });
+      conn.on('close', () => { if (onConnError) onConnError('Lost connection to the room.'); });
       conn.on('error', err => {
         if (settled) return;
         settled = true;
@@ -202,7 +226,7 @@ const NET = (() => {
     if (!data || !data.t) return;
     if (data.t === 'join') {
       roster[fromId] = roster[fromId] || { id: fromId, isHost: false };
-      roster[fromId].name = data.name || 'Người chơi';
+      roster[fromId].name = data.name || 'Player';
       broadcastLobby();
       // Nếu ván chơi đã bắt đầu, cho người mới vào thẳng game giữa chừng,
       // spawn ngay tại vị trí hiện tại của Host thay vì bắt chờ ở lobby.
@@ -231,6 +255,11 @@ const NET = (() => {
         p.remoteKeys = data.keys || {};
         if (data.jump) p.remoteJumpPulse = true;
       }
+    } else if (data.t === 'chat') {
+      // Show it locally on the Host's own screen, then relay to every OTHER client
+      // (the sender already shows their own message locally the instant they hit Enter).
+      if (typeof receiveChatMessage === 'function') receiveChatMessage(fromId, data.text);
+      sendToAllClients({ t: 'chat', id: fromId, text: data.text }, fromId);
     }
   }
 
@@ -240,8 +269,9 @@ const NET = (() => {
     sendToAllClients({ t: 'lobby', roster: list, hostId: myPeerId });
   }
 
-  function sendToAllClients(msg) {
+  function sendToAllClients(msg, excludeId) {
     for (const id in clientConns) {
+      if (excludeId && id === excludeId) continue;
       const c = clientConns[id];
       if (c && c.open) c.send(msg);
     }
@@ -270,7 +300,7 @@ const NET = (() => {
     if (typeof level === 'undefined' || !level || typeof players === 'undefined' || !players) return;
     const msg = {
       t: 'state',
-      score: score, lives: lives, coinsCollected: coinsCollected, currentLevel: currentLevel,
+      score: score, coinsCollected: coinsCollected, currentLevel: currentLevel,
       players: {},
       enemies: level.enemies.map(e => ({ x: e.x, y: e.y, w: e.w, h: e.h, hp: e.hp, maxHp: e.maxHp, alive: e.alive, flashTimer: e.flashTimer, animSeed: e.animSeed })),
       coinsTaken: level.coins.map(c => c.taken),
@@ -279,11 +309,7 @@ const NET = (() => {
         hp: level.boss.hp, maxHp: level.boss.maxHp, alive: level.boss.alive,
         facing: level.boss.facing, phase: level.boss.phase, timer: level.boss.timer,
         attackChoice: level.boss.attackChoice, flashTimer: level.boss.flashTimer,
-        animSeed: level.boss.animSeed,
-        // Chỉ gửi đúng phần Client cần để VẼ (sizeMult dùng cho luồng lửa trong drawBoss),
-        // thay vì gửi cả object diff (nhiều field chỉ Host cần để tính toán tấn công),
-        // giảm bớt vài chục byte thừa lặp lại mỗi tick, dồn lại cũng đáng kể khi gửi 30 lần/giây.
-        diff: { sizeMult: level.boss.diff.sizeMult }
+        animSeed: level.boss.animSeed, diff: level.boss.diff
       } : null,
       projectiles: level.projectiles,
       flyingEnemies: level.flyingEnemies
@@ -293,19 +319,10 @@ const NET = (() => {
       msg.players[id] = {
         x: p.x, y: p.y, facing: p.facing, animState: p.animState, animFrame: p.animFrame,
         hp: p.hp, maxHp: p.maxHp, charId: p.charId, name: p.name, invincible: p.invincible,
-        damageFlashTimer: p.damageFlashTimer
+        damageFlashTimer: p.damageFlashTimer, lives: p.lives, eliminated: p.eliminated, isBot: p.isBot
       };
     }
-    // Gửi state riêng cho từng client, có kiểm tra backpressure - KHÔNG dùng
-    // sendToAllClients() chung ở đây, vì state cần logic "được phép bỏ qua tick"
-    // còn các message khác (lobby/start/banner/gameOver) luôn phải gửi đủ, không bỏ.
-    for (const id in clientConns) {
-      const c = clientConns[id];
-      if (!c || !c.open) continue;
-      const buffered = c.bufferedAmount || 0;
-      if (buffered > STATE_BACKPRESSURE_LIMIT) continue; // mạng client này đang nghẽn - bỏ qua tick này, đợi hàng đợi rút bớt
-      c.send(msg);
-    }
+    sendToAllClients(msg);
   }
 
   // ---------- Phía CLIENT ----------
@@ -326,6 +343,18 @@ const NET = (() => {
       if (typeof showLevelBannerLocal === 'function') showLevelBannerLocal(data.text);
     } else if (data.t === 'gameOver') {
       if (typeof endGameClient === 'function') endGameClient(data.win);
+    } else if (data.t === 'chat') {
+      if (typeof receiveChatMessage === 'function') receiveChatMessage(data.id, data.text);
+    }
+  }
+
+  // Send a chat message we typed to everyone else. Solo/Bot-team mode has no
+  // network peers, so there's nothing to relay (the local echo already shows it).
+  function sendChat(text) {
+    if (mode === 'client') {
+      if (hostConn && hostConn.open) hostConn.send({ t: 'chat', text });
+    } else if (mode === 'host') {
+      sendToAllClients({ t: 'chat', id: myPeerId, text });
     }
   }
 
@@ -344,8 +373,8 @@ const NET = (() => {
     } else if (mode === 'host') {
       if (roster[myPeerId]) roster[myPeerId].charId = charId;
       broadcastLobby();
-    } else if (mode === 'solo') {
-      if (roster.solo) roster.solo.charId = charId;
+    } else if (mode === 'solo' || mode === 'bot') {
+      if (roster[myPeerId]) roster[myPeerId].charId = charId;
     }
   }
 
@@ -354,9 +383,9 @@ const NET = (() => {
   }
 
   return {
-    initSolo, initHost, initClient,
+    initSolo, initHost, initClient, initBotTeam, assignBotCharacters,
     startGameSignal, broadcastLevelInit, tickBroadcast, sendToAllClients,
-    sendInputTick, sendMyChar, getRoster,
+    sendInputTick, sendMyChar, sendChat, getRoster,
     get mode() { return mode; },
     get myId() { return myPeerId; },
     set onLobbyUpdate(fn) { onLobbyUpdate = fn; },
