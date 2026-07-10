@@ -66,13 +66,25 @@ function createBoss(lvl, levelNum) {
   const maxX = flag.x - SAFE_GAP_BEFORE_FLAG - w;
   const minX = maxX - ARENA_WIDTH;
 
+  // ----- Vùng bay theo chiều dọc: luôn tính theo chiều cao màn hình thực tế, -----
+  // ----- không dùng offset cố định 750px nữa (đó là lý do rồng bị lòi ra khỏi mép trên -----
+  // ----- màn hình ở các màn sau, khi sizeMult tăng làm rồng bị đẩy lên quá cao). -----
+  const SKY_TOP_MARGIN = 30;   // luôn chừa khoảng trống này ở mép trên màn hình, không để đầu/cánh rồng bị cắt
+  const GROUND_CLEARANCE = 70; // luôn chừa khoảng trống này phía trên mặt đất, không để rồng đè lên mặt đất
+  const screenH = (typeof canvas !== 'undefined' && canvas.height) ? canvas.height : 720;
+  // Rồng không được bay cao hơn mép trên màn hình, và không được thấp hơn (gần mặt đất) quá mức
+  const minFlyY = Math.max(SKY_TOP_MARGIN, lvl.groundY - screenH + SKY_TOP_MARGIN);
+  const maxFlyY = Math.min(lvl.groundY - h - GROUND_CLEARANCE, lvl.groundY - h * 0.55);
+  // Phòng trường hợp màn quá thấp khiến minFlyY > maxFlyY (rồng quá to so với vùng trời):
+  // vẫn đảm bảo có ít nhất 1 khoảng bay hợp lệ
+  const safeMaxFlyY = Math.max(maxFlyY, minFlyY + 40);
+  const midFlyY = (minFlyY + safeMaxFlyY) / 2;
+
   return {
-    // Tăng offset độ cao bay (620 -> 750) tương ứng với việc thân rồng cao hơn (baseH tăng
-    // 260 -> 390), để giữ nguyên khoảng hở phía dưới thân rồng so với mặt đất như trước.
-    x: maxX, y: lvl.groundY - 750 * diff.sizeMult,
+    x: maxX, y: midFlyY,
     w: w, h: h,
     minX: minX, maxX: maxX,
-    baseFlyY: lvl.groundY - 750 * diff.sizeMult,
+    minFlyY: minFlyY, maxFlyY: safeMaxFlyY, midFlyY: midFlyY,
     levelNum: levelNum,
     diff: diff,
 
@@ -85,6 +97,12 @@ function createBoss(lvl, levelNum) {
     hitCooldown: 0,
     flashTimer: 0,
     animSeed: Math.random() * 100,
+    vertSeed2: Math.random() * 100, // seed riêng cho sóng bay lên/xuống thứ 2, để 2 sóng không trùng nhịp
+
+    // ----- Tốc độ bay ngang dao động ngẫu nhiên (lúc lượn nhanh, lúc lượn chậm) -----
+    speedMult: 1,           // hệ số tốc độ hiện tại (được làm mượt dần tới speedTargetMult)
+    speedTargetMult: 1,     // hệ số tốc độ đang nhắm tới
+    speedChangeTimer: 60 + Math.random() * 60, // còn bao lâu thì đổi tốc độ mục tiêu lần kế
 
     phase: 'patrol', // 'patrol' | 'windup' | 'barrage' | 'fire' | 'cooldown'
     timer: 120 + Math.random() * 60, // tuần tra 1 lúc trước khi ra đòn đầu tiên cho người chơi kịp thở
@@ -189,13 +207,29 @@ function updateBoss(shootBoxes) {
   if ((boss.phase === 'patrol' || boss.phase === 'cooldown') && target) {
     boss.facing = (target.x + target.w / 2 < boss.x + boss.w / 2) ? -1 : 1;
   }
+  // ----- Tốc độ bay ngang đổi ngẫu nhiên theo thời gian, làm mượt bằng easing để không bị giật -----
+  boss.speedChangeTimer--;
+  if (boss.speedChangeTimer <= 0) {
+    boss.speedTargetMult = 0.45 + Math.random() * 1.35; // dao động khoảng 0.45x (rề rề) tới 1.8x (lượn nhanh)
+    boss.speedChangeTimer = 50 + Math.random() * 90;
+  }
+  boss.speedMult += (boss.speedTargetMult - boss.speedMult) * 0.025;
+
   if (boss.phase === 'patrol') {
-    boss.x += boss.dir * 4.2;
+    boss.x += boss.dir * 4.2 * boss.speedMult;
     if (boss.x < boss.minX) { boss.x = boss.minX; boss.dir = 1; }
     if (boss.x > boss.maxX) { boss.x = boss.maxX; boss.dir = -1; }
   }
-  const hover = Math.sin(gameFrame * 0.05 + boss.animSeed) * 40 * boss.diff.sizeMult;
-  boss.y = boss.baseFlyY + hover;
+
+  // ----- Bay lên cao / xuống thấp: trộn 2 sóng sin chu kỳ khác nhau để trông tự nhiên hơn, -----
+  // ----- rồi kẹp trong [minFlyY, maxFlyY] để toàn thân rồng luôn nằm gọn trong màn hình. -----
+  const flyRange = boss.maxFlyY - boss.minFlyY;
+  const bigWave = Math.sin(gameFrame * 0.011 + boss.animSeed) * (flyRange * 0.5);   // sóng lớn, chu kỳ chậm: lúc bay sát trời, lúc sà thấp gần đất
+  const smallWave = Math.sin(gameFrame * 0.045 + boss.vertSeed2) * (flyRange * 0.12); // sóng nhỏ, chu kỳ nhanh hơn: rung nhẹ như đang vỗ cánh
+  let targetY = boss.midFlyY + bigWave + smallWave;
+  if (targetY < boss.minFlyY) targetY = boss.minFlyY;
+  if (targetY > boss.maxFlyY) targetY = boss.maxFlyY;
+  boss.y = targetY;
 
   boss.timer--;
   switch (boss.phase) {
