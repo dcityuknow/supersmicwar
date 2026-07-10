@@ -262,10 +262,30 @@ function applyStateSnapshot(data) {
       players[id] = p;
     }
     if (p.hp > np.hp) SFX.hurt();
-    p.x = np.x; p.y = np.y; p.facing = np.facing;
-    p.animState = np.animState; p.animFrame = np.animFrame;
-    p.hp = np.hp; p.maxHp = np.maxHp; p.charId = np.charId; p.name = np.name;
-    p.invincible = np.invincible; p.damageFlashTimer = np.damageFlashTimer;
+
+    if (id === myId) {
+      // Người chơi CHÍNH MÌNH: đã được dự đoán cục bộ mỗi frame ở updateClientLocal()
+      // (xem update.js), nên KHÔNG ghi đè x/y/facing/animState trực tiếp - làm vậy sẽ
+      // huỷ luôn hiệu quả của dự đoán, quay lại y hệt cảm giác trễ như trước.
+      // Chỉ "kéo êm" về đúng vị trí Host nếu lệch NHỎ (bù trôi dạt tự nhiên do 2 bên
+      // tính hơi khác nhau), còn lệch quá LỚN (bị quái/đạn đẩy lùi, rơi hố về lại điểm
+      // xuất phát...) thì chấp nhận thẳng vị trí Host vì đó là sự kiện Host mới biết.
+      const dx = np.x - p.x, dy = np.y - p.y;
+      const distSq = dx * dx + dy * dy;
+      const SNAP_DIST_SQ = 200 * 200;
+      if (distSq > SNAP_DIST_SQ) {
+        p.x = np.x; p.y = np.y; p.vx = 0; p.vy = 0;
+      } else if (distSq > 4) {
+        p.x += dx * 0.25; p.y += dy * 0.25;
+      }
+      p.hp = np.hp; p.maxHp = np.maxHp; p.charId = np.charId; p.name = np.name;
+      p.invincible = np.invincible; p.damageFlashTimer = np.damageFlashTimer;
+    } else {
+      p.x = np.x; p.y = np.y; p.facing = np.facing;
+      p.animState = np.animState; p.animFrame = np.animFrame;
+      p.hp = np.hp; p.maxHp = np.maxHp; p.charId = np.charId; p.name = np.name;
+      p.invincible = np.invincible; p.damageFlashTimer = np.damageFlashTimer;
+    }
   }
   for (const id in players) {
     if (!data.players[id]) delete players[id];

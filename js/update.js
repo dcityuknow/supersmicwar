@@ -26,9 +26,34 @@ function update() {
 
 // ----- Client: không tính vật lý, chỉ cập nhật camera theo người chơi của mình
 // và tiến hoá các hiệu ứng hình ảnh cục bộ (số "-xx" nổi lên...) -----
+// ----- Client: TỰ DỰ ĐOÁN (client-side prediction) vị trí của CHÍNH MÌNH ngay
+// theo phím đang bấm, không chờ Host phản hồi -> điều khiển luôn mượt bất kể độ
+// trễ mạng (đặc biệt quan trọng khi đi qua TURN relay ở xa, độ trễ round-trip có
+// thể lên tới cả giây). Host vẫn là nơi QUYẾT ĐỊNH cuối cùng: nếu vị trí dự đoán
+// lệch nhiều so với state thật từ Host (do va chạm quái/gai/đạn mà Client không tự
+// tính), sẽ được chỉnh lại êm nhẹ ở applyStateSnapshot() (xem game-state.js).
+// Người chơi KHÁC (không phải mình) vẫn vẽ hoàn toàn theo state nhận từ Host như cũ,
+// vì độ trễ của họ không ảnh hưởng tới cảm giác điều khiển của người đang ngồi máy này.
 function updateClientLocal() {
   const me = players[myId];
   if (me) {
+    stepPlayerInput(me, keys, jumpBuffered);
+    stepPlayerPhysics(me, false); // false: Client không tự quyết "rơi hố mất mạng"
+
+    // Xác định hoạt ảnh cục bộ luôn, không chờ Host báo về (tương tự cuối
+    // runAuthoritativeUpdate() bên Host) để nhân vật phản hồi tức thì khi chạy/nhảy.
+    if (me.shootTimer > 0) me.animState = 'shoot';
+    else if (me.xoacTimer > 0) me.animState = 'xoac';
+    else if (!me.onGround) me.animState = 'jump';
+    else if (Math.abs(me.vx) > 0.6) me.animState = 'run';
+    else me.animState = 'idle';
+    if (me.animState === 'run') {
+      me.animTimer++;
+      if (me.animTimer >= 5) { me.animTimer = 0; me.animFrame = (me.animFrame + 1) % 4; }
+    } else {
+      me.animTimer = 0; me.animFrame = 0;
+    }
+
     camX = me.x - W / 2 + me.w / 2;
     if (camX < 0) camX = 0;
     if (camX > levelWidth - W) camX = levelWidth - W;
@@ -79,7 +104,8 @@ function stepPlayerInput(p, k, jumpPulse) {
   }
 }
 
-function stepPlayerPhysics(p) {
+function stepPlayerPhysics(p, canLoseLife) {
+  if (canLoseLife === undefined) canLoseLife = true;
   p.vy += GRAVITY;
   if (p.vy > 18) p.vy = 18;
 
@@ -111,7 +137,10 @@ function stepPlayerPhysics(p) {
     }
   }
 
-  if (p.y > H + 200) loseLife(p);
+  // canLoseLife=false khi Client tự dự đoán cục bộ (xem updateClientLocal): Client
+  // không có quyền tự quyết "rơi hố mất mạng", chỉ Host mới được quyết việc đó.
+  // Client vẫn rơi tiếp về mặt hình ảnh cho tới khi nhận state chính thức từ Host.
+  if (canLoseLife && p.y > H + 200) loseLife(p);
   if (p.invincible > 0) p.invincible--;
 }
 
