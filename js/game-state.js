@@ -39,7 +39,14 @@ function makePlayer(id, name, charId, groundY) {
     xoacCooldown: 0,
     // ----- chỉ dùng trên Host, cho các người chơi KHÁC không phải mình -----
     remoteKeys: {},        // trạng thái phím mới nhất nhận được từ client này
-    remoteJumpPulse: false // tín hiệu "vừa nhấn nhảy" (1 lần) từ client này
+    remoteJumpPulse: false, // tín hiệu "vừa nhấn nhảy" (1 lần) từ client này
+    // ----- Vị trí "để VẼ" (khác với x/y "thật") - xem updateRenderInterpolation() -----
+    // Trên máy Client, người chơi KHÁC (không phải mình) chỉ nhận state ~30 lần/giây,
+    // nếu vẽ thẳng theo x/y mỗi lần state tới sẽ bị giật cục (teleport) mỗi khi có state
+    // mới. render* là vị trí đã được NỘI SUY mượt giữa 2 mốc dữ liệu gần nhất, luôn trễ
+    // hơn thực tế một chút (xem NET_INTERP_DELAY) để lúc nào cũng có đủ dữ liệu nội suy.
+    renderX: 120, renderY: groundY - 720, renderFacing: 1, renderAnimState: 'idle', renderAnimFrame: 0,
+    netBuffer: [] // các mốc {t, x, y, facing, animState, animFrame} nhận được gần đây, dùng để nội suy
   };
 }
 
@@ -281,6 +288,14 @@ function applyStateSnapshot(data) {
       p.hp = np.hp; p.maxHp = np.maxHp; p.charId = np.charId; p.name = np.name;
       p.invincible = np.invincible; p.damageFlashTimer = np.damageFlashTimer;
     } else {
+      // Người chơi KHÁC (không phải mình): KHÔNG gán thẳng x/y/facing/animState nữa -
+      // thay vào đó đẩy vào netBuffer để updateRenderInterpolation() nội suy mượt lúc vẽ
+      // (xem draw.js gọi hàm đó mỗi frame). p.x/p.y vẫn được cập nhật để các chỗ khác
+      // (không phải vẽ) luôn có giá trị "mới nhất biết được" khi cần, nhưng draw.js sẽ
+      // dùng p.renderX/p.renderY chứ không dùng p.x/p.y trực tiếp nữa.
+      if (!p.netBuffer) p.netBuffer = [];
+      p.netBuffer.push({ t: performance.now(), x: np.x, y: np.y, facing: np.facing, animState: np.animState, animFrame: np.animFrame });
+      if (p.netBuffer.length > 20) p.netBuffer.shift(); // chặn buffer phình to vô hạn nếu vì lý do gì đó không được dọn kịp
       p.x = np.x; p.y = np.y; p.facing = np.facing;
       p.animState = np.animState; p.animFrame = np.animFrame;
       p.hp = np.hp; p.maxHp = np.maxHp; p.charId = np.charId; p.name = np.name;
@@ -289,6 +304,63 @@ function applyStateSnapshot(data) {
   }
   for (const id in players) {
     if (!data.players[id]) delete players[id];
+  }
+}
+
+// ----- Nội suy vị trí "để vẽ" cho người chơi khác (Entity Interpolation) -----
+// Chỉ ảnh hưởng tới HÌNH ẢNH, không đụng tới vật lý/va chạm thật (vẫn do Host tính).
+// Trễ có chủ đích NET_INTERP_DELAY (ms) so với hiện tại, để lúc nào cũng có đủ 2 mốc
+// dữ liệu quanh thời điểm cần vẽ mà nội suy mượt qua, thay vì "nhảy cóc" mỗi khi 1 gói
+// state mới tới (điều vẫn xảy ra nếu vẽ thẳng theo x/y mới nhận được).
+const NET_INTERP_DELAY = 100;
+const NET_BUFFER_MAX_AGE = 1000; // ms - dọn các mốc quá cũ, tránh buffer phình to mãi
+
+function updateRenderInterpolation() {
+  if (!players) return;
+  const now = performance.now();
+  for (const id in players) {
+    const p = players[id];
+    // Host/Solo luôn tính vật lý thật ở 60fps cho MỌI người chơi, và chính mình (myId)
+    // trên máy Client đã có dự đoán cục bộ riêng (xem updateClientLocal) -> cả 2
+    // trường hợp này đều không cần nội suy, vẽ thẳng theo vị trí thật hiện tại.
+    if (NET.mode !== 'client' || id === myId) {
+      p.renderX = p.x; p.renderY = p.y; p.renderFacing = p.facing;
+      p.renderAnimState = p.animState; p.renderAnimFrame = p.animFrame;
+      continue;
+    }
+
+    const buf = p.netBuffer;
+    if (!buf || buf.length === 0) {
+      // Chưa nhận state nào cho người này (vừa vào phòng) -> tạm vẽ theo giá trị hiện có
+      p.renderX = p.x; p.renderY = p.y; p.renderFacing = p.facing;
+      p.renderAnimState = p.animState; p.renderAnimFrame = p.animFrame;
+      continue;
+    }
+    while (buf.length > 2 && now - buf[0].t > NET_BUFFER_MAX_AGE) buf.shift();
+
+    const renderTime = now - NET_INTERP_DELAY;
+    let s0 = buf[0], s1 = buf[buf.length - 1];
+    if (renderTime <= buf[0].t) {
+      s0 = s1 = buf[0]; // chưa đủ dữ liệu mới -> đứng yên ở mốc cũ nhất còn nhớ
+    } else if (renderTime >= buf[buf.length - 1].t) {
+      s0 = s1 = buf[buf.length - 1]; // mạng đang trễ hơn cả NET_INTERP_DELAY -> đứng ở mốc mới nhất
+    } else {
+      for (let i = 0; i < buf.length - 1; i++) {
+        if (buf[i].t <= renderTime && renderTime <= buf[i + 1].t) {
+          s0 = buf[i]; s1 = buf[i + 1];
+          break;
+        }
+      }
+    }
+    const span = s1.t - s0.t;
+    const frac = span > 0 ? (renderTime - s0.t) / span : 0;
+    p.renderX = s0.x + (s1.x - s0.x) * frac;
+    p.renderY = s0.y + (s1.y - s0.y) * frac;
+    // facing/animState/animFrame là dữ liệu rời rạc, không nội suy theo số được -> giữ
+    // nguyên theo mốc s0 (mốc ngay trước/đúng thời điểm render), tránh đổi hoạt ảnh sai lúc.
+    p.renderFacing = s0.facing;
+    p.renderAnimState = s0.animState;
+    p.renderAnimFrame = s0.animFrame;
   }
 }
 

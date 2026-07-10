@@ -25,6 +25,15 @@ const NET = (() => {
   let broadcastCounter = 0;
   const BROADCAST_EVERY = 2; // gửi state ~30 lần/giây (game chạy ~60fps)
 
+  // Ngưỡng số byte đang CÒN KẸT trong hàng đợi gửi (chưa thoát khỏi máy) của 1 kết nối.
+  // State là dữ liệu "thay được" - gói mới luôn đủ dùng, mất gói cũ không sao. Nếu hàng
+  // đợi gửi của 1 client đang đầy (mạng người đó đang nghẽn), ta THÀ BỎ QUA state của
+  // tick này CHO RIÊNG client đó, còn hơn xếp chồng thêm dữ liệu cũ lên hàng đợi khiến
+  // độ trễ ngày càng DỒN DẦN theo thời gian (bufferbloat) - đúng kiểu lag "càng chơi
+  // càng nặng" thay vì lag ổn định. Mỗi client được đánh giá độc lập theo mạng của
+  // chính nó, không ảnh hưởng tới các client khác đang mượt.
+  const STATE_BACKPRESSURE_LIMIT = 16384;
+
   // Thời gian tối đa (ms) Client chờ Host phản hồi trước khi báo lỗi,
   // thay vì treo mãi ở "Đang kết nối..." khi 2 máy không thể bắt tay P2P được.
   const CONNECT_TIMEOUT_MS = 15000;
@@ -270,7 +279,11 @@ const NET = (() => {
         hp: level.boss.hp, maxHp: level.boss.maxHp, alive: level.boss.alive,
         facing: level.boss.facing, phase: level.boss.phase, timer: level.boss.timer,
         attackChoice: level.boss.attackChoice, flashTimer: level.boss.flashTimer,
-        animSeed: level.boss.animSeed, diff: level.boss.diff
+        animSeed: level.boss.animSeed,
+        // Chỉ gửi đúng phần Client cần để VẼ (sizeMult dùng cho luồng lửa trong drawBoss),
+        // thay vì gửi cả object diff (nhiều field chỉ Host cần để tính toán tấn công),
+        // giảm bớt vài chục byte thừa lặp lại mỗi tick, dồn lại cũng đáng kể khi gửi 30 lần/giây.
+        diff: { sizeMult: level.boss.diff.sizeMult }
       } : null,
       projectiles: level.projectiles,
       flyingEnemies: level.flyingEnemies
@@ -283,7 +296,16 @@ const NET = (() => {
         damageFlashTimer: p.damageFlashTimer
       };
     }
-    sendToAllClients(msg);
+    // Gửi state riêng cho từng client, có kiểm tra backpressure - KHÔNG dùng
+    // sendToAllClients() chung ở đây, vì state cần logic "được phép bỏ qua tick"
+    // còn các message khác (lobby/start/banner/gameOver) luôn phải gửi đủ, không bỏ.
+    for (const id in clientConns) {
+      const c = clientConns[id];
+      if (!c || !c.open) continue;
+      const buffered = c.bufferedAmount || 0;
+      if (buffered > STATE_BACKPRESSURE_LIMIT) continue; // mạng client này đang nghẽn - bỏ qua tick này, đợi hàng đợi rút bớt
+      c.send(msg);
+    }
   }
 
   // ---------- Phía CLIENT ----------

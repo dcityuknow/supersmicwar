@@ -5,6 +5,7 @@
 
 function draw() {
   if (!started || !level || !players) return;
+  updateRenderInterpolation(); // tính vị trí "để vẽ" mượt cho người chơi khác (xem game-state.js)
   ctx.clearRect(0, 0, W, H);
 
   const grad = ctx.createLinearGradient(0,0,0,H);
@@ -115,22 +116,27 @@ function draw() {
   // ----- Tất cả người chơi (mỗi người ảnh nhân vật riêng theo lựa chọn của họ) -----
   for (const id in players) {
     const p = players[id];
+    // Dùng render* (đã nội suy mượt cho người chơi khác, xem updateRenderInterpolation)
+    // thay vì x/y/facing/animState/animFrame "thật" - với chính mình và trên Host/Solo,
+    // render* luôn bằng đúng giá trị thật nên không đổi gì cả, chỉ khác khi là người
+    // chơi khác đang xem trên máy Client.
+    const rx = p.renderX, ry = p.renderY, rFacing = p.renderFacing;
     const charImg = getCurrentCharImageFor(p);
-    const flashHidden = p.invincible > 0 && Math.floor(p.invincible/5)%2!==0 && p.animState !== 'xoac';
+    const flashHidden = p.invincible > 0 && Math.floor(p.invincible/5)%2!==0 && p.renderAnimState !== 'xoac';
     // Hình vẽ to hơn hitbox CHAR_DRAW_SCALE lần, canh giữa theo chiều ngang,
     // canh đáy trùng đáy hitbox (+ offset nhỏ) để chân luôn chạm đất đúng chỗ va chạm thực tế.
     const drawW = p.w * CHAR_DRAW_SCALE;
     const drawH = p.h * CHAR_DRAW_SCALE;
-    const drawX = p.x - (drawW - p.w) / 2;
+    const drawX = rx - (drawW - p.w) / 2;
     const perCharOffset = CHAR_Y_OFFSET_BY_ID[p.charId] || 0;
-    const drawY = p.y + p.h - drawH + CHAR_VISUAL_Y_OFFSET + perCharOffset;
+    const drawY = ry + p.h - drawH + CHAR_VISUAL_Y_OFFSET + perCharOffset;
     if (!flashHidden) {
       ctx.save();
       const hasImg = charImg && charImg.complete && charImg.naturalWidth > 0;
       const spriteToDraw = (p.damageFlashTimer > 0 && hasImg)
         ? getTintedSprite(charImg, drawW, drawH, 'rgba(255,40,40,0.6)')
         : charImg;
-      if (p.facing < 0 && hasImg) {
+      if (rFacing < 0 && hasImg) {
         ctx.translate(drawX + drawW, drawY);
         ctx.scale(-1, 1);
         ctx.drawImage(spriteToDraw, 0, 0, drawW, drawH);
@@ -171,10 +177,15 @@ function draw() {
 function getCurrentCharImageFor(p) {
   const c = getCharById(p.charId) || CHARACTERS[0];
   if (!c) return null;
-  switch (p.animState) {
+  // Dùng renderAnimState/renderAnimFrame (đã nội suy/giữ đồng bộ với renderX/renderY ở
+  // trên) thay vì animState/animFrame thô, để pose không "nhảy" lệch thời điểm so với
+  // vị trí đang vẽ mượt của người chơi khác.
+  const animState = p.renderAnimState != null ? p.renderAnimState : p.animState;
+  const animFrame = p.renderAnimFrame != null ? p.renderAnimFrame : p.animFrame;
+  switch (animState) {
     case 'shoot': return c.shootImg;
     case 'xoac':  return c.xoacImg;
-    case 'run':   return c.runImgs[p.animFrame];
+    case 'run':   return c.runImgs[animFrame];
     case 'jump':  return c.runImgs[1]; // dùng tạm 1 frame chạy cho lúc nhảy
     default:      return c.img; // idle
   }
