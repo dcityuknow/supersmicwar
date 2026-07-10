@@ -94,6 +94,11 @@ joinConfirmBtn.addEventListener('click', () => {
       }
       return;
     }
+    // QUAN TRỌNG: gán myId ngay khi kết nối thành công. Nếu thiếu bước này,
+    // camera (camX) và các chỗ so sánh "đây có phải người chơi của mình không"
+    // (id === myId) sẽ không hoạt động, vì myId vẫn giữ giá trị undefined
+    // (chỉ Host/Solo mới đi qua resetState() để tự gán myId).
+    myId = NET.myId;
     joinError.textContent = '';
     lobbyBar.classList.remove('hidden');
     roomCodeBox.classList.add('hidden');

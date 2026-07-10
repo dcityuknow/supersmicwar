@@ -201,6 +201,12 @@ function applyLevelInit(data) {
     flagWarnCooldown: 0
   };
   if (!players) players = {};
+  // Khởi tạo camX=0 ngay từ đây (thay vì chờ tới lần đầu updateClientLocal() chạy
+  // xong), để tránh camX ở trạng thái undefined -> NaN trong khoảnh khắc ngắn giữa
+  // lúc levelInit tới và lúc state đầu tiên (có players) tới - camX=NaN sẽ khiến
+  // ctx.translate() bị trình duyệt coi là lệnh không hợp lệ và bỏ qua hoàn toàn,
+  // làm hỏng luôn việc vẽ background (vòng lặp tính theo camX cũng ra NaN).
+  if (typeof camX !== 'number' || Number.isNaN(camX)) camX = 0;
   updateHudTotals();
   showLevelBannerLocal('MÀN ' + currentLevel + '!');
 }
