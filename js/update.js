@@ -43,10 +43,21 @@ function stepPlayerInput(p, k, jumpPulse) {
   if (p.shootCooldown > 0) p.shootCooldown--;
   if (p.xoacCooldown > 0) p.xoacCooldown--;
 
-  if (p.xoacTimer <= 0 && k['KeyZ'] && p.shootTimer <= 0 && p.shootCooldown <= 0) {
+  // Riêng Keng: KHÔNG dùng cooldown đếm theo thời gian (shootCooldown) để cho phép ném
+  // lao mới, mà chờ đúng lúc lao vừa rồi biến mất (trúng gì đó / hết tầm bay) — xem cờ
+  // p.spearActive, được updateSpears() đặt lại false khi lao đó bị xoá khỏi màn.
+  const isKeng = p.charId === 'keng';
+  const attackReady = isKeng ? !p.spearActive : p.shootCooldown <= 0;
+
+  if (p.xoacTimer <= 0 && k['KeyZ'] && p.shootTimer <= 0 && attackReady) {
     p.shootTimer = SHOOT_DURATION;
-    p.shootCooldown = SHOOT_COOLDOWN;
     SFX.kick();
+    if (isKeng) {
+      spawnSpear(p);
+      p.spearActive = true;
+    } else {
+      p.shootCooldown = SHOOT_COOLDOWN;
+    }
   }
   if (p.shootTimer <= 0 && k['KeyX'] && p.xoacTimer <= 0 && p.xoacCooldown <= 0) {
     p.xoacTimer = XOAC_DURATION;
@@ -113,6 +124,80 @@ function stepPlayerPhysics(p) {
 
   if (p.y > H + 200) loseLife(p);
   if (p.invincible > 0) p.invincible--;
+}
+
+// ----- Lao của Keng (ném khi bấm Z, thay cho đòn đá tay không) -----
+
+// Tạo 1 thanh lao mới, bay thẳng từ vị trí người ném theo đúng hướng đang quay mặt.
+// Sát thương dùng đúng p.kickDamage (đã nhân damageMult riêng của nhân vật/độ khó màn),
+// y hệt công thức đòn đá thường, chỉ khác ở chỗ bay xa thay vì chỉ có hitbox sát người.
+function spawnSpear(p) {
+  if (!level) return;
+  if (!level.spears) level.spears = [];
+  const dir = p.facing;
+  const y = p.y + p.h * 0.32;
+  const x = dir > 0 ? p.x + p.w * 0.55 : p.x + p.w * 0.45 - SPEAR_W;
+  level.spears.push({
+    x: x, y: y, w: SPEAR_W, h: SPEAR_H,
+    vx: dir * SPEAR_SPEED,
+    dir: dir,
+    ownerId: p.id,
+    damage: p.kickDamage,
+    life: SPEAR_LIFE
+  });
+}
+
+// Cập nhật vị trí + va chạm của mọi thanh lao đang bay mỗi frame: bay thẳng theo vx,
+// gây sát thương 1 LẦN cho quái thường/rồng đầu tiên trúng phải rồi biến mất ngay
+// (không xuyên qua tiếp); tự biến mất nếu bay hết "tầm sống" (life) mà không trúng gì
+// hoặc bay ra khỏi biên màn chơi.
+function updateSpears() {
+  if (!level.spears) level.spears = [];
+  for (let i = level.spears.length - 1; i >= 0; i--) {
+    const s = level.spears[i];
+    s.x += s.vx;
+    s.life--;
+
+    let hit = false;
+
+    // Va vào quái thường
+    for (const e of level.enemies) {
+      if (!e.alive || e.hitCooldown > 0) continue;
+      if (rectsOverlap(s, e)) {
+        const dead = damageEnemy(e, s.damage);
+        SFX.hitEnemy();
+        e.hitCooldown = ENEMY_HIT_COOLDOWN;
+        if (dead) {
+          e.alive = false;
+          score += 100;
+          spawnFlyingEnemy(e, s.dir);
+        }
+        hit = true;
+        break;
+      }
+    }
+
+    // Va vào Rồng canh giữ
+    if (!hit && level.boss && level.boss.alive && level.boss.hitCooldown <= 0 && rectsOverlap(s, level.boss)) {
+      const boss = level.boss;
+      const dead = damageEnemy(boss, s.damage);
+      SFX.hitEnemy();
+      boss.hitCooldown = BOSS_HIT_COOLDOWN;
+      if (dead) {
+        boss.alive = false;
+        score += 1000;
+        showLevelBanner('GUARDIAN DRAGON DEFEATED!');
+      }
+      hit = true;
+    }
+
+    if (hit || s.life <= 0 || s.x < -200 || s.x > levelWidth + 200) {
+      level.spears.splice(i, 1);
+      // Lao đã biến mất -> cho phép người ném (nếu vẫn còn trong trận) ném lao mới
+      const owner = players[s.ownerId];
+      if (owner) owner.spearActive = false;
+    }
+  }
 }
 
 // ----- AI cho Bot đồng đội (chế độ "Team với Bot") -----
@@ -410,7 +495,9 @@ function runAuthoritativeUpdate() {
   for (const id in players) {
     const p = players[id];
     if (p.eliminated) continue;
-    if (p.shootTimer > 0) {
+    // Keng không dùng hitbox đá tay không nữa — đòn Z của Keng là thanh lao ném ra
+    // (xem spawnSpear/updateSpears), nên không tạo shootBox melee cho Keng ở đây.
+    if (p.shootTimer > 0 && p.charId !== 'keng') {
       const boxW = 130;
       shootBoxes[id] = {
         x: p.facing > 0 ? p.x + p.w * 0.5 : p.x + p.w * 0.5 - boxW,
@@ -492,6 +579,9 @@ function runAuthoritativeUpdate() {
 
   // Boss rồng canh giữ: kiểm tra va chạm/tấn công với TẤT CẢ người chơi
   updateBoss(shootBoxes);
+
+  // Các thanh lao đang bay (Keng ném ra khi bấm Z)
+  updateSpears();
 
   // Quái đang bay (bị sút / xoạc trúng) — chỉ hiệu ứng hình ảnh, không cần đồng bộ tinh vi
   for (let i = level.flyingEnemies.length - 1; i >= 0; i--) {

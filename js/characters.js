@@ -154,6 +154,12 @@ CHARACTERS.forEach(c => {
   c.xoacImg = loadImg(folder + c.id + '-xoac.png');
 });
 
+// Ảnh thanh lao riêng của Keng (keng/weapons.png) - dùng khi Keng bấm Z để ném lao bay ra
+// thay cho đòn đá tay không thông thường của các nhân vật khác (xem spawnSpear trong
+// update.js và phần vẽ lao trong draw.js).
+const kengCharForWeapon = getCharById('keng');
+if (kengCharForWeapon) kengCharForWeapon.weaponImg = loadImg('keng/weapons.png');
+
 // Build select screen
 const charGrid = document.getElementById('charGrid');
 const startBtn = document.getElementById('startBtn');

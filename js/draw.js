@@ -112,6 +112,31 @@ function draw() {
     ctx.restore();
   }
 
+  // Lao đang bay (Keng ném ra khi bấm Z), vẽ bằng ảnh keng/weapons.png
+  const kengWeaponImg = (getCharById('keng') || {}).weaponImg;
+  const weaponImgReady = kengWeaponImg && kengWeaponImg.complete && kengWeaponImg.naturalWidth > 0;
+  for (const s of (level.spears || [])) {
+    ctx.save();
+    const cx = s.x + s.w / 2, cy = s.y + s.h / 2;
+    ctx.translate(cx, cy);
+    if (s.dir < 0) ctx.scale(-1, 1); // lật ảnh theo hướng bay để mũi lao luôn hướng về phía trước
+    if (weaponImgReady) {
+      ctx.drawImage(kengWeaponImg, -s.w / 2, -s.h / 2, s.w, s.h);
+    } else {
+      // Ảnh chưa tải xong -> vẽ tạm 1 thanh lao đơn giản bằng code
+      ctx.fillStyle = '#c9a227';
+      ctx.fillRect(-s.w / 2, -s.h * 0.16, s.w * 0.78, s.h * 0.32);
+      ctx.fillStyle = '#eee';
+      ctx.beginPath();
+      ctx.moveTo(s.w * 0.28, -s.h / 2);
+      ctx.lineTo(s.w / 2, 0);
+      ctx.lineTo(s.w * 0.28, s.h / 2);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   // ----- Tất cả người chơi (mỗi người ảnh nhân vật riêng theo lựa chọn của họ) -----
   for (const id in players) {
     const p = players[id];
@@ -155,13 +180,13 @@ function draw() {
       ctx.restore();
     }
 
-    // Thanh máu / tên / chat bubble được neo theo ĐỈNH HITBOX THẬT (p.y), KHÔNG phải
-    // theo đỉnh khung hình đã phóng to (drawY): vì hình vẽ được phóng to gấp
-    // CHAR_DRAW_SCALE lần so với hitbox (để trông đẹp hơn), đỉnh khung hình đó cao
-    // hơn đầu nhân vật thật rất nhiều -> nếu neo theo drawY, thanh máu sẽ trôi lên
-    // lơ lửng cách xa đầu. Neo theo p.y cho khoảng cách luôn sát đầu, đúng tỉ lệ theo
-    // kích thước thật (sizeMult) của từng nhân vật.
-    const headY = p.y - 4 * sizeMult;
+    // Thanh máu / tên / chat bubble được neo theo ĐỈNH KHUNG HÌNH ĐÃ PHÓNG TO (drawY),
+    // cộng thêm CHAR_HEAD_MARGIN_FRAC * drawH để chừa đúng phần viền trong suốt nhỏ phía
+    // trên tóc trong ảnh PNG. TRƯỚC ĐÂY neo theo p.y (đỉnh hitbox thật) nhưng hình vẽ được
+    // phóng to gấp CHAR_DRAW_SCALE lần so với hitbox, nên đỉnh hitbox nằm sâu bên trong
+    // thân hình (ngang ngực/vai) chứ không phải trên đầu -> khiến thanh máu bị "chìm"
+    // xuống đè vào mặt/ngực nhân vật. Neo theo drawY (đỉnh hình thật) mới đúng vị trí đầu.
+    const headY = drawY + drawH * CHAR_HEAD_MARGIN_FRAC;
 
     // Thanh máu người chơi - đặt ngay trên đầu
     drawHealthBar(drawX + drawW/2, headY - 14, p.hp, p.maxHp, 100);

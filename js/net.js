@@ -312,7 +312,8 @@ const NET = (() => {
         animSeed: level.boss.animSeed, diff: level.boss.diff
       } : null,
       projectiles: level.projectiles,
-      flyingEnemies: level.flyingEnemies
+      flyingEnemies: level.flyingEnemies,
+      spears: level.spears || []
     };
     for (const id in players) {
       const p = players[id];

@@ -21,6 +21,14 @@ const KICK_DAMAGE = 25;          // máu quái mất khi bị sút (Z)
 const XOAC_DAMAGE = 35;          // máu quái mất khi bị xoạc trúng (X)
 const ENEMY_HIT_COOLDOWN = 20;   // số frame miễn nhiễm của quái sau khi vừa bị đánh trúng
 
+// ----- Lao của Keng: thay vì đá tay không (Z), Keng ném ra 1 thanh lao bay thẳng -----
+// Sát thương gây ra vẫn dùng đúng "kickDamage" của người chơi (đã nhân damageMult riêng
+// theo nhân vật/độ khó màn), lao chỉ khác ở chỗ là đòn TẦM XA bay ra thay vì hitbox sát người.
+const SPEAR_SPEED = 6;   // tốc độ bay ngang của lao (px/frame)
+const SPEAR_LIFE = 45;    // số frame lao tồn tại trước khi tự biến mất nếu không trúng gì
+const SPEAR_W = 380;      // kích thước hitbox/hình vẽ của lao
+const SPEAR_H = 160;
+
 // ----- Đạn quái vật bắn ra -----
 const PROJECTILE_DAMAGE = 15;        // máu mất khi trúng đạn quái
 const PROJECTILE_SPEED_MIN = 6;

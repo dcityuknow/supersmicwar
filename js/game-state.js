@@ -80,6 +80,10 @@ function makePlayer(id, name, charId, groundY, isBot) {
     shootCooldown: 0,
     xoacTimer: 0,
     xoacCooldown: 0,
+    // Riêng Keng: true khi lao vừa ném ra vẫn còn tồn tại trên màn (chưa trúng gì / chưa
+    // hết "tầm sống") — trong lúc này KHÔNG được ném lao mới, phải chờ lao cũ biến mất
+    // (xem updateSpears() trong update.js, nơi cờ này được đặt lại về false).
+    spearActive: false,
     // Sát thương gây ra khi sút (Z) / xoạc (X), đã nhân theo hệ số riêng của nhân vật
     // (ví dụ Spider đánh mạnh gấp đôi). Dùng thay cho hằng số KICK_DAMAGE/XOAC_DAMAGE
     // ở những nơi tính sát thương do CHÍNH người chơi này gây ra.
@@ -181,6 +185,7 @@ function advanceLevel() {
     p.hp = p.maxHp;
     p.invincible = 60;
     p.spikeTickTimer = 0;
+    p.spearActive = false; // màn mới -> level.spears cũ (kể cả lao đang bay) bị bỏ, không còn gì để chờ nữa
   }
   coinsCollected = 0;
   effects = [];
@@ -229,6 +234,7 @@ function loseLife(p) {
     p.vx = 0; p.vy = 0; p.jumpsUsed = 0;
     p.hp = p.maxHp;
     p.spikeTickTimer = 0;
+    p.spearActive = false; // hồi sinh lại -> không còn bị kẹt chờ lao của mạng trước
   }
   updateHudTotals();
   checkTeamWipe();
@@ -286,6 +292,7 @@ function applyLevelInit(data) {
     flag: data.flag,
     flyingEnemies: [],
     projectiles: [],
+    spears: [],
     boss: null,
     flagWarnCooldown: 0
   };
@@ -340,6 +347,7 @@ function applyStateSnapshot(data) {
 
   level.projectiles = data.projectiles || [];
   level.flyingEnemies = data.flyingEnemies || [];
+  level.spears = data.spears || [];
 
   if (!players) players = {};
   for (const id in data.players) {
