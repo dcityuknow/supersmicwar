@@ -17,6 +17,20 @@ const CHAR_VISUAL_Y_OFFSET = 10; // chỉnh nhân vật "thụt" xuống thêm c
 // giảm nếu vẫn còn THẤP hơn đầu (đè vào mặt/ngực) như trong ảnh chụp màn hình gốc.
 const CHAR_HEAD_MARGIN_FRAC = 0.05;
 
+// Override RIÊNG cho từng nhân vật, đè lên CHAR_HEAD_MARGIN_FRAC ở trên. Cần vì ảnh của
+// mỗi nhân vật có tỉ lệ "khoảng trống phía trên đầu" khác nhau (khác người vẽ, khác
+// sizeMult...) nên 1 con số % dùng chung cho tất cả không khớp hết. Nhân vật nào chưa
+// khai báo ở đây thì tự dùng CHAR_HEAD_MARGIN_FRAC mặc định.
+// Keng to hơn hẳn (sizeMult 1.5) nên ảnh phóng to cao hơn nhiều -> cần % lớn hơn hẳn mặc
+// định để tên/thanh máu không bị trôi lên quá cao phía trên đầu như trước. Đây là số ước
+// lượng ban đầu — chỉnh tăng nếu vẫn còn cao hơn đầu, giảm nếu bị thấp xuống dưới đầu.
+const CHAR_HEAD_MARGIN_BY_ID = {
+  keng: 0.3,
+};
+function getCharHeadMarginFrac(charId) {
+  return (charId && CHAR_HEAD_MARGIN_BY_ID[charId] !== undefined) ? CHAR_HEAD_MARGIN_BY_ID[charId] : CHAR_HEAD_MARGIN_FRAC;
+}
+
 // Offset riêng CHO TỪNG NHÂN VẬT, cộng thêm vào CHAR_VISUAL_Y_OFFSET ở trên.
 // Vì ảnh của mỗi nhân vật có thể có khoảng trong suốt phía dưới chân khác nhau
 // (do người vẽ khác nhau), nên cần chỉnh riêng để chân luôn chạm đất chính xác.

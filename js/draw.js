@@ -143,6 +143,7 @@ function draw() {
     if (p.eliminated) continue;
     const charImg = getCurrentCharImageFor(p);
     const flashHidden = p.invincible > 0 && Math.floor(p.invincible/5)%2!==0 && p.animState !== 'xoac';
+    const hasImg = charImg && charImg.complete && charImg.naturalWidth > 0;
     // Hình vẽ to hơn hitbox CHAR_DRAW_SCALE lần, canh giữa theo chiều ngang,
     // canh đáy trùng đáy hitbox (+ offset nhỏ) để chân luôn chạm đất đúng chỗ va chạm thực tế.
     // Vẽ hình theo visualW (bề rộng THẬT theo sizeMult, không bị hitboxWidthTrim bóp) để
@@ -150,8 +151,14 @@ function draw() {
     // hitbox thật (p.w) để vị trí đứng nhìn tự nhiên, không lệch tâm.
     const visualW = p.visualW || p.w;
     const visualH = p.visualH || p.h;
-    const drawW = visualW * CHAR_DRAW_SCALE;
+    // Chiều cao (drawH) vẫn là "chuẩn" để canh chân chạm đất (theo sizeMult như cũ).
+    // Chiều rộng (drawW) thì tính LẠI theo ĐÚNG TỈ LỆ THẬT của ảnh PNG (naturalWidth /
+    // naturalHeight) khi ảnh đã tải xong, thay vì ép cứng theo visualW cố định (160:200) —
+    // nếu ép cứng, ảnh nào có tỉ lệ khung hình khác (vd Keng cầm giáo, mặc giáp khiến
+    // ảnh không đúng tỉ lệ 160:200) sẽ bị kéo dãn/bóp méo so với ảnh gốc. Ảnh chưa tải
+    // xong thì tạm dùng visualW như cũ (không biết tỉ lệ thật để tính).
     const drawH = visualH * CHAR_DRAW_SCALE;
+    const drawW = hasImg ? drawH * (charImg.naturalWidth / charImg.naturalHeight) : visualW * CHAR_DRAW_SCALE;
     const drawX = p.x - (drawW - p.w) / 2;
     // Các offset (CHAR_VISUAL_Y_OFFSET, CHAR_Y_OFFSET_BY_ID) được tinh chỉnh để bù
     // khoảng trong suốt ở đáy ảnh PNG. Khoảng trống đó cũng phóng to/thu nhỏ theo
@@ -162,7 +169,6 @@ function draw() {
     const drawY = p.y + p.h - drawH + CHAR_VISUAL_Y_OFFSET * sizeMult + perCharOffset;
     if (!flashHidden) {
       ctx.save();
-      const hasImg = charImg && charImg.complete && charImg.naturalWidth > 0;
       const spriteToDraw = (p.damageFlashTimer > 0 && hasImg)
         ? getTintedSprite(charImg, drawW, drawH, 'rgba(255,40,40,0.6)')
         : charImg;
@@ -186,7 +192,7 @@ function draw() {
     // phóng to gấp CHAR_DRAW_SCALE lần so với hitbox, nên đỉnh hitbox nằm sâu bên trong
     // thân hình (ngang ngực/vai) chứ không phải trên đầu -> khiến thanh máu bị "chìm"
     // xuống đè vào mặt/ngực nhân vật. Neo theo drawY (đỉnh hình thật) mới đúng vị trí đầu.
-    const headY = drawY + drawH * CHAR_HEAD_MARGIN_FRAC;
+    const headY = drawY + drawH * getCharHeadMarginFrac(p.charId);
 
     // Thanh máu người chơi - đặt ngay trên đầu
     drawHealthBar(drawX + drawW/2, headY - 14, p.hp, p.maxHp, 100);
