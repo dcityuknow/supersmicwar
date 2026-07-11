@@ -26,6 +26,10 @@ function makePlayer(id, name, charId, groundY, isBot) {
   // Bóp bớt riêng bề rộng hitbox theo px (không đụng chiều cao/hình vẽ), dùng cho nhân vật
   // cầm vũ khí dài khiến hitbox rộng hơn thân thật (xem chú thích hitboxWidthTrim trong characters.js)
   const hitboxWidthTrim = (getCharById(charId) || {}).hitboxWidthTrim || 0;
+  // Bóp bớt riêng chiều cao hitbox theo px (không đụng bề rộng/hình vẽ), dùng cho nhân vật
+  // to hơn 1 (sizeMult > 1) để hitbox va chạm không cao hơn hẳn nhân vật khác, tránh bị
+  // mắc kẹt ở các khe/hầm hẹp (xem chú thích hitboxHeightTrim trong characters.js)
+  const hitboxHeightTrim = (getCharById(charId) || {}).hitboxHeightTrim || 0;
   const baseW = 160, baseH = 200;
   const maxHp = Math.round(PLAYER_MAX_HP * hpMult);
   // Bot đồng đội: lệch nhẹ tốc độ (~90%-110%) theo từng bot (ổn định theo id, không đổi
@@ -35,12 +39,13 @@ function makePlayer(id, name, charId, groundY, isBot) {
     id: id, name: name || 'Player', charId: charId,
     isBot: !!isBot,
     x: 120, y: groundY - 720,
-    // w = bề rộng HITBOX dùng cho va chạm (có bị hitboxWidthTrim bóp bớt nếu nhân vật khai báo).
-    // visualW = bề rộng THẬT dùng để VẼ HÌNH, luôn đúng tỉ lệ theo sizeMult, KHÔNG bị trim
-    // -- tách riêng 2 giá trị này để hitboxWidthTrim chỉ ảnh hưởng va chạm, không làm nhân
-    // vật bị vẽ hẹp/gầy đi so với hình gốc.
-    w: Math.max(1, baseW * sizeMult - hitboxWidthTrim), h: baseH * sizeMult,
+    // w/h = kích thước HITBOX dùng cho va chạm (có bị hitboxWidthTrim/hitboxHeightTrim bóp
+    // bớt nếu nhân vật khai báo). visualW/visualH = kích thước THẬT dùng để VẼ HÌNH, luôn
+    // đúng tỉ lệ theo sizeMult, KHÔNG bị trim -- tách riêng các giá trị này để trim chỉ
+    // ảnh hưởng va chạm, không làm nhân vật bị vẽ hẹp/thấp đi so với hình gốc.
+    w: Math.max(1, baseW * sizeMult - hitboxWidthTrim), h: Math.max(1, baseH * sizeMult - hitboxHeightTrim),
     visualW: baseW * sizeMult,
+    visualH: baseH * sizeMult,
     vx: 0, vy: 0,
     speed: 13.5 * speedMult * botJitter,
     // Gia tốc di chuyển mỗi frame khi bấm trái/phải, cũng nhân theo speedMult - nếu chỉ

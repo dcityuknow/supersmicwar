@@ -124,8 +124,9 @@ function draw() {
     // nhân vật không bị vẽ hẹp/gầy đi so với ảnh gốc; vẫn canh giữa hình theo đúng tâm
     // hitbox thật (p.w) để vị trí đứng nhìn tự nhiên, không lệch tâm.
     const visualW = p.visualW || p.w;
+    const visualH = p.visualH || p.h;
     const drawW = visualW * CHAR_DRAW_SCALE;
-    const drawH = p.h * CHAR_DRAW_SCALE;
+    const drawH = visualH * CHAR_DRAW_SCALE;
     const drawX = p.x - (drawW - p.w) / 2;
     // Các offset (CHAR_VISUAL_Y_OFFSET, CHAR_Y_OFFSET_BY_ID) được tinh chỉnh để bù
     // khoảng trong suốt ở đáy ảnh PNG. Khoảng trống đó cũng phóng to/thu nhỏ theo
@@ -154,8 +155,16 @@ function draw() {
       ctx.restore();
     }
 
-    // Thanh máu người chơi - đặt ngay trên đầu, tính theo vị trí vẽ thực tế (đã scale)
-    drawHealthBar(drawX + drawW/2, drawY - 22, p.hp, p.maxHp, 100);
+    // Thanh máu / tên / chat bubble được neo theo ĐỈNH HITBOX THẬT (p.y), KHÔNG phải
+    // theo đỉnh khung hình đã phóng to (drawY): vì hình vẽ được phóng to gấp
+    // CHAR_DRAW_SCALE lần so với hitbox (để trông đẹp hơn), đỉnh khung hình đó cao
+    // hơn đầu nhân vật thật rất nhiều -> nếu neo theo drawY, thanh máu sẽ trôi lên
+    // lơ lửng cách xa đầu. Neo theo p.y cho khoảng cách luôn sát đầu, đúng tỉ lệ theo
+    // kích thước thật (sizeMult) của từng nhân vật.
+    const headY = p.y - 4 * sizeMult;
+
+    // Thanh máu người chơi - đặt ngay trên đầu
+    drawHealthBar(drawX + drawW/2, headY - 14, p.hp, p.maxHp, 100);
 
     // Tên người chơi phía trên thanh máu, để phân biệt khi chơi nhiều người.
     // Người chơi của chính máy này được tô vàng + ghi "(bạn)" cho dễ nhận ra.
@@ -166,14 +175,14 @@ function draw() {
     ctx.lineWidth = 3;
     ctx.fillStyle = (id === myId) ? '#ffe066' : '#fff';
     const label = (p.isBot ? '🤖 ' : '') + (p.name || 'Player') + (id === myId ? ' (you)' : '');
-    ctx.strokeText(label, drawX + drawW/2, drawY - 30);
-    ctx.fillText(label, drawX + drawW/2, drawY - 30);
+    ctx.strokeText(label, drawX + drawW/2, headY - 22);
+    ctx.fillText(label, drawX + drawW/2, headY - 22);
     ctx.restore();
 
     // Floating chat bubble: gold-bordered, glowing box shown just above the name
     // for a few seconds after the player sends a message.
     if (p.chatText && Date.now() < p.chatUntil) {
-      drawChatBubble(drawX + drawW / 2, drawY - 46, p.chatText);
+      drawChatBubble(drawX + drawW / 2, headY - 38, p.chatText);
     }
   }
 

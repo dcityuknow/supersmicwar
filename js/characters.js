@@ -26,6 +26,12 @@
 //                      nhân vật cầm vũ khí dài (vd giáo) khiến hitbox quá rộng, "bắc cầu"
 //                      qua hố khiến không rơi xuống được — bóp bớt vài px cho khớp lại
 //                      với cơ thể thật.                                              — 0 = không bóp
+//   hitboxHeightTrim: số px bóp BỚT riêng chiều cao hitbox (không đụng chiều rộng,
+//                      không đụng hình vẽ) sau khi đã nhân sizeMult. Dùng cho nhân vật
+//                      to hơn 1 (sizeMult > 1): hình vẽ vẫn to như bình thường, nhưng
+//                      hitbox va chạm được bóp thấp lại để lọt qua các khe/hầm hẹp mà
+//                      nhân vật cỡ gốc vẫn đi qua được (nếu không bóp, nhân vật to hơn
+//                      sẽ có hitbox cao hơn hẳn -> bị "mắc kẹt" ở những chỗ hẹp).  — 0 = không bóp
 //   speedMult       : nhân tốc độ di chuyển                                 — 1 = giữ nguyên gốc
 //   damageMult      : nhân sát thương gây ra khi sút (Z) / xoạc (X)         — 1 = giữ nguyên gốc
 const CHARACTERS = [
@@ -37,6 +43,7 @@ const CHARACTERS = [
     hpMult: 1,
     sizeMult: 1,
     hitboxWidthTrim: 0,
+    hitboxHeightTrim: 0,
     speedMult: 2,   // tốc độ di chuyển x2
     damageMult: 2,  // sát thương x2
   },
@@ -48,19 +55,24 @@ const CHARACTERS = [
     hpMult: 1,
     sizeMult: 1,
     hitboxWidthTrim: 0,
+    hitboxHeightTrim: 0,
     speedMult: 1,
     damageMult: 1,
   },
 
-  // ----- Keng: to thật 1.5 lần (cả hitbox lẫn hình vẽ). Cầm giáo dài nên bề rộng hitbox
-  // bị kéo rộng hơn thân thật, "bắc cầu" qua hố khiến không rơi xuống được -> bóp bớt
-  // hitboxWidthTrim vài px để khớp lại đúng bề rộng cơ thể (chỉnh số này nếu vẫn chưa lọt hố). -----
+  // ----- Keng: hình vẽ vẫn to 1.5 lần như cũ, NHƯNG hitbox va chạm được bóp về sát
+  // đúng kích thước gốc (160x200) ở CẢ 2 CHIỀU, để Keng lọt qua mọi khe/hầm hẹp mà
+  // các nhân vật cỡ gốc đi qua được (trước đây chỉ bóp bề rộng vì cầm giáo dài, còn
+  // chiều cao không hề bóp -> hitbox cao hơn hẳn nhân vật khác 100px, bị mắc kẹt ở
+  // những đoạn hẹp). Chỉnh 2 số Trim này nếu vẫn chưa lọt được (tăng Trim = hitbox
+  // nhỏ lại thêm; không được vượt quá sizeMult*baseSize vì hitbox tối thiểu là 1px). -----
   {
     id: 'keng',
     name: 'Keng',
     hpMult: 1,
     sizeMult: 1.5,
-    hitboxWidthTrim: 60,
+    hitboxWidthTrim: 80,   // 160*1.5 - 80 = 160  -> đúng bằng bề rộng hitbox gốc
+    hitboxHeightTrim: 100, // 200*1.5 - 100 = 200 -> đúng bằng chiều cao hitbox gốc
     speedMult: 1,
     damageMult: 1,
   },
@@ -72,6 +84,7 @@ const CHARACTERS = [
     hpMult: 1,
     sizeMult: 1,
     hitboxWidthTrim: 0,
+    hitboxHeightTrim: 0,
     speedMult: 1,
     damageMult: 1,
   },
@@ -83,6 +96,7 @@ const CHARACTERS = [
     hpMult: 2,      // máu tối đa x2
     sizeMult: 1,
     hitboxWidthTrim: 0,
+    hitboxHeightTrim: 0,
     speedMult: 1,
     damageMult: 1,
   },
