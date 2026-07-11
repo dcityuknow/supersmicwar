@@ -17,7 +17,7 @@ const CHAR_VISUAL_Y_OFFSET = 10; // chỉnh nhân vật "thụt" xuống thêm c
 const CHAR_Y_OFFSET_BY_ID = {
   spider:  40,   // spider đang lơ lửng -> đẩy xuống thêm. Tăng số này nếu vẫn còn hở, giảm nếu bị lún đất.
   noxx:    0,
-  keng:    0,
+  keng:    18,   // keng đang lơ lửng nhẹ -> đẩy xuống thêm. Tăng số này nếu vẫn còn hở, giảm nếu bị lún đất.
   xealist: 0,
   rocky:   20,
 };
@@ -202,4 +202,3 @@ function spawnFlyingEnemy(e, facingDir) {
     timer: 60
   });
 }
-
