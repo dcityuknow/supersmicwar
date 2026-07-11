@@ -15,13 +15,19 @@
 // Tương tự cho spider/, noxx/, keng/, xealist/ ...
 //
 // ----- Chỉ số riêng (multiplier) của từng nhân vật -----
-// Mỗi nhân vật là 1 BLOCK RIÊNG BIỆT bên dưới, khai báo ĐẦY ĐỦ cả 4 thông số
+// Mỗi nhân vật là 1 BLOCK RIÊNG BIỆT bên dưới, khai báo ĐẦY ĐỦ các thông số
 // (không gộp chung / không ẩn giá trị mặc định), để sau này muốn chỉnh hoặc thêm
 // nhân vật mới chỉ cần sửa đúng block của nhân vật đó, không phải dò lại toàn bộ file:
-//   hpMult     : nhân máu tối đa (PLAYER_MAX_HP)      — 1 = giữ nguyên gốc
-//   sizeMult   : nhân kích thước (cả hitbox lẫn hình vẽ, vì hình vẽ luôn tỉ lệ theo hitbox) — 1 = giữ nguyên gốc
-//   speedMult  : nhân tốc độ di chuyển                — 1 = giữ nguyên gốc
-//   damageMult : nhân sát thương gây ra khi sút (Z) / xoạc (X) — 1 = giữ nguyên gốc
+//   hpMult          : nhân máu tối đa (PLAYER_MAX_HP)                       — 1 = giữ nguyên gốc
+//   sizeMult        : nhân kích thước THẬT (cả hitbox lẫn hình vẽ đều to/nhỏ theo,
+//                      vì hình luôn vẽ tỉ lệ đúng theo hitbox — không có "to ảo")  — 1 = giữ nguyên gốc
+//   hitboxWidthTrim : số px bóp BỚT riêng chiều rộng hitbox (không đụng chiều cao,
+//                      không đụng hình vẽ) sau khi đã nhân sizeMult. Dùng cho trường hợp
+//                      nhân vật cầm vũ khí dài (vd giáo) khiến hitbox quá rộng, "bắc cầu"
+//                      qua hố khiến không rơi xuống được — bóp bớt vài px cho khớp lại
+//                      với cơ thể thật.                                              — 0 = không bóp
+//   speedMult       : nhân tốc độ di chuyển                                 — 1 = giữ nguyên gốc
+//   damageMult      : nhân sát thương gây ra khi sút (Z) / xoạc (X)         — 1 = giữ nguyên gốc
 const CHARACTERS = [
 
   // ----- Spider: nhanh nhẹn, đánh mạnh -----
@@ -30,6 +36,7 @@ const CHARACTERS = [
     name: 'Spider',
     hpMult: 1,
     sizeMult: 1,
+    hitboxWidthTrim: 0,
     speedMult: 2,   // tốc độ di chuyển x2
     damageMult: 2,  // sát thương x2
   },
@@ -40,16 +47,20 @@ const CHARACTERS = [
     name: 'Noxx',
     hpMult: 1,
     sizeMult: 1,
+    hitboxWidthTrim: 0,
     speedMult: 1,
     damageMult: 1,
   },
 
-  // ----- Keng: chỉ số gốc, không chỉnh gì -----
+  // ----- Keng: to thật 1.5 lần (cả hitbox lẫn hình vẽ). Cầm giáo dài nên bề rộng hitbox
+  // bị kéo rộng hơn thân thật, "bắc cầu" qua hố khiến không rơi xuống được -> bóp bớt
+  // hitboxWidthTrim vài px để khớp lại đúng bề rộng cơ thể (chỉnh số này nếu vẫn chưa lọt hố). -----
   {
     id: 'keng',
     name: 'Keng',
     hpMult: 1,
     sizeMult: 1.5,
+    hitboxWidthTrim: 60,
     speedMult: 1,
     damageMult: 1,
   },
@@ -60,6 +71,7 @@ const CHARACTERS = [
     name: 'Xealist',
     hpMult: 1,
     sizeMult: 1,
+    hitboxWidthTrim: 0,
     speedMult: 1,
     damageMult: 1,
   },
@@ -70,6 +82,7 @@ const CHARACTERS = [
     name: 'Rocky',
     hpMult: 2,      // máu tối đa x2
     sizeMult: 1,
+    hitboxWidthTrim: 0,
     speedMult: 1,
     damageMult: 1,
   },
@@ -153,3 +166,4 @@ CHARACTERS.forEach(c => {
 });
 
 // Nút "Bắt Đầu" được xử lý trong lobby.js (vì hành vi khác nhau tuỳ Solo/Host/Client)
+

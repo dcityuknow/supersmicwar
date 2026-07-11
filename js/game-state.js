@@ -23,6 +23,9 @@ function makePlayer(id, name, charId, groundY, isBot) {
   const speedMult = getCharStatMult(charId, 'speedMult');
   const hpMult = getCharStatMult(charId, 'hpMult');
   const damageMult = getCharStatMult(charId, 'damageMult');
+  // Bóp bớt riêng bề rộng hitbox theo px (không đụng chiều cao/hình vẽ), dùng cho nhân vật
+  // cầm vũ khí dài khiến hitbox rộng hơn thân thật (xem chú thích hitboxWidthTrim trong characters.js)
+  const hitboxWidthTrim = (getCharById(charId) || {}).hitboxWidthTrim || 0;
   const baseW = 160, baseH = 200;
   const maxHp = Math.round(PLAYER_MAX_HP * hpMult);
   // Bot đồng đội: lệch nhẹ tốc độ (~90%-110%) theo từng bot (ổn định theo id, không đổi
@@ -32,7 +35,7 @@ function makePlayer(id, name, charId, groundY, isBot) {
     id: id, name: name || 'Player', charId: charId,
     isBot: !!isBot,
     x: 120, y: groundY - 720,
-    w: baseW * sizeMult, h: baseH * sizeMult,
+    w: Math.max(1, baseW * sizeMult - hitboxWidthTrim), h: baseH * sizeMult,
     vx: 0, vy: 0,
     speed: 13.5 * speedMult * botJitter,
     // Gia tốc di chuyển mỗi frame khi bấm trái/phải, cũng nhân theo speedMult - nếu chỉ

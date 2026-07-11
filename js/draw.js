@@ -123,8 +123,13 @@ function draw() {
     const drawW = p.w * CHAR_DRAW_SCALE;
     const drawH = p.h * CHAR_DRAW_SCALE;
     const drawX = p.x - (drawW - p.w) / 2;
-    const perCharOffset = CHAR_Y_OFFSET_BY_ID[p.charId] || 0;
-    const drawY = p.y + p.h - drawH + CHAR_VISUAL_Y_OFFSET + perCharOffset;
+    // Các offset (CHAR_VISUAL_Y_OFFSET, CHAR_Y_OFFSET_BY_ID) được tinh chỉnh để bù
+    // khoảng trong suốt ở đáy ảnh PNG. Khoảng trống đó cũng phóng to/thu nhỏ theo
+    // sizeMult của nhân vật (vì cả tấm ảnh được vẽ to/nhỏ theo), nên PHẢI nhân offset
+    // theo sizeMult -- nếu không, nhân vật có sizeMult khác 1 sẽ bị nổi/lún so với đất.
+    const sizeMult = getCharStatMult(p.charId, 'sizeMult');
+    const perCharOffset = (CHAR_Y_OFFSET_BY_ID[p.charId] || 0) * sizeMult;
+    const drawY = p.y + p.h - drawH + CHAR_VISUAL_Y_OFFSET * sizeMult + perCharOffset;
     if (!flashHidden) {
       ctx.save();
       const hasImg = charImg && charImg.complete && charImg.naturalWidth > 0;
