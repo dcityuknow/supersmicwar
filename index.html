@@ -36,6 +36,13 @@
     <button id="joinConfirmBtn">Connect</button>
     <div id="joinError" class="lobbyError"></div>
   </div>
+
+  <!-- Bảng xếp hạng Top 10: điểm = thời gian pass hết game (càng ngắn càng cao).
+       Được leaderboard.js đọc/ghi/vẽ; lưu bằng localStorage trên chính trình duyệt. -->
+  <div id="leaderboardBox">
+    <div id="leaderboardTitle">🏆 Top 10 — Fastest Clears</div>
+    <div id="leaderboardList"></div>
+  </div>
 </div>
 
 <!-- Character select screen (shared by Solo / Host / Client) -->
@@ -99,6 +106,7 @@
 <script src="js/effects.js"></script>
 <script src="js/input.js"></script>
 <script src="js/chat.js"></script>
+<script src="js/leaderboard.js"></script>
 <script src="js/net.js"></script>
 <script src="js/characters.js"></script>
 <script src="js/level.js"></script>
