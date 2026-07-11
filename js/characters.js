@@ -13,21 +13,67 @@
 //   rocky/rocky-shoot.png  -> sút
 //   rocky/rocky-xoac.png   -> xoạc
 // Tương tự cho spider/, noxx/, keng/, xealist/ ...
+//
 // ----- Chỉ số riêng (multiplier) của từng nhân vật -----
-// Các trường dưới đây là hệ số NHÂN so với chỉ số gốc (mặc định = 1 nếu không ghi):
-//   hpMult     : nhân máu tối đa (PLAYER_MAX_HP)
-//   sizeMult   : nhân kích thước (cả hitbox lẫn hình vẽ, vì hình vẽ luôn tỉ lệ theo hitbox)
-//   speedMult  : nhân tốc độ di chuyển
-//   damageMult : nhân sát thương gây ra khi sút (Z) / xoạc (X)
-// Nhân vật không khai báo trường nào -> dùng mặc định 1 (chỉ số gốc, không đổi).
+// Mỗi nhân vật là 1 BLOCK RIÊNG BIỆT bên dưới, khai báo ĐẦY ĐỦ cả 4 thông số
+// (không gộp chung / không ẩn giá trị mặc định), để sau này muốn chỉnh hoặc thêm
+// nhân vật mới chỉ cần sửa đúng block của nhân vật đó, không phải dò lại toàn bộ file:
+//   hpMult     : nhân máu tối đa (PLAYER_MAX_HP)      — 1 = giữ nguyên gốc
+//   sizeMult   : nhân kích thước (cả hitbox lẫn hình vẽ, vì hình vẽ luôn tỉ lệ theo hitbox) — 1 = giữ nguyên gốc
+//   speedMult  : nhân tốc độ di chuyển                — 1 = giữ nguyên gốc
+//   damageMult : nhân sát thương gây ra khi sút (Z) / xoạc (X) — 1 = giữ nguyên gốc
 const CHARACTERS = [
-  // Spider: nhanh nhẹn, đánh mạnh - tốc độ di chuyển x2, sát thương x2 so với nhân vật thường
-  { id: 'spider',   name: 'Spider',  speedMult: 2, damageMult: 2 },
-  { id: 'noxx',     name: 'Noxx'     },
-  { id: 'keng',     name: 'Keng'     },
-  { id: 'xealist',  name: 'Xealist'  },
-  // Rocky: tanker - chỉ máu trâu (x2), kích thước giữ nguyên như bình thường
-  { id: 'rocky',    name: 'Rocky',   hpMult: 2 },
+
+  // ----- Spider: nhanh nhẹn, đánh mạnh -----
+  {
+    id: 'spider',
+    name: 'Spider',
+    hpMult: 1,
+    sizeMult: 1,
+    speedMult: 2,   // tốc độ di chuyển x2
+    damageMult: 2,  // sát thương x2
+  },
+
+  // ----- Noxx: chỉ số gốc, không chỉnh gì -----
+  {
+    id: 'noxx',
+    name: 'Noxx',
+    hpMult: 1,
+    sizeMult: 1,
+    speedMult: 1,
+    damageMult: 1,
+  },
+
+  // ----- Keng: chỉ số gốc, không chỉnh gì -----
+  {
+    id: 'keng',
+    name: 'Keng',
+    hpMult: 1,
+    sizeMult: 1.5,
+    speedMult: 1,
+    damageMult: 1,
+  },
+
+  // ----- Xealist: chỉ số gốc, không chỉnh gì -----
+  {
+    id: 'xealist',
+    name: 'Xealist',
+    hpMult: 1,
+    sizeMult: 1,
+    speedMult: 1,
+    damageMult: 1,
+  },
+
+  // ----- Rocky: tanker - máu trâu x2, kích thước giữ nguyên -----
+  {
+    id: 'rocky',
+    name: 'Rocky',
+    hpMult: 2,      // máu tối đa x2
+    sizeMult: 1,
+    speedMult: 1,
+    damageMult: 1,
+  },
+
 ];
 
 // Lấy chỉ số (hệ số riêng) theo charId, dùng giá trị mặc định 1 nếu nhân vật không
@@ -107,4 +153,3 @@ CHARACTERS.forEach(c => {
 });
 
 // Nút "Bắt Đầu" được xử lý trong lobby.js (vì hành vi khác nhau tuỳ Solo/Host/Client)
-
