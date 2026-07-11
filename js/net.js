@@ -343,6 +343,8 @@ const NET = (() => {
       if (typeof showLevelBannerLocal === 'function') showLevelBannerLocal(data.text);
     } else if (data.t === 'gameOver') {
       if (typeof endGameClient === 'function') endGameClient(data.win);
+    } else if (data.t === 'levelClear') {
+      if (typeof applyLevelClearFromHost === 'function') applyLevelClearFromHost(data);
     } else if (data.t === 'chat') {
       if (typeof receiveChatMessage === 'function') receiveChatMessage(data.id, data.text);
     }

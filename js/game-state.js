@@ -13,6 +13,13 @@
 
 let level, players, myId, score, coinsCollected, camX, gameOver, win, started, currentLevel;
 
+// Mốc thời gian (Date.now()) lúc ván chơi bắt đầu -> dùng để tính thời gian
+// PASS GAME (từ lúc bắt đầu tới lúc hạ xong màn cuối) cho bảng xếp hạng
+// (xem leaderboard.js). Chỉ có ý nghĩa trên máy Host/Solo (nơi tính giờ chuẩn);
+// Client cũng tự đặt lại để làm mốc dự phòng, nhưng thời gian chính xác luôn
+// do Host gửi kèm trong tín hiệu 'gameOver'.
+let gameStartTime = 0;
+
 const PLAYER_MAX_LIVES = 3; // mỗi người chơi (kể cả từng Bot) có riêng số mạng này, KHÔNG dùng chung
 
 // Tạo 1 đối tượng người chơi mới (áp dụng công thức/hằng số gốc, có nhân thêm hệ số
@@ -136,6 +143,7 @@ function resetState() {
   score = 0; coinsCollected = 0; camX = 0;
   gameOver = false; win = false;
   effects = [];
+  gameStartTime = Date.now();
 
   updateHudTotals();
   document.getElementById('overlay').style.display = 'none';
@@ -186,6 +194,7 @@ function advanceLevel() {
 function startGame() {
   if (NET.mode === 'client') {
     started = true;
+    gameStartTime = Date.now(); // mốc dự phòng; thời gian chính xác sẽ do Host gửi kèm khi thắng
     document.getElementById('overlay').style.display = 'none';
     return;
   }
@@ -359,3 +368,41 @@ const SHOOT_COOLDOWN = 22;
 const XOAC_DURATION = 26;    // số frame giữ pose xoạc
 const XOAC_COOLDOWN = 34;
 const XOAC_SPEED_MULT = 1.6; // xoạc lao nhanh hơn chạy thường
+
+// ---------- Ghi bảng xếp hạng mỗi khi pass XONG 1 MÀN (không chỉ lúc thắng cả game) ----------
+
+// Gọi ngay tại thời điểm cả team chạm cờ qua màn `levelNum` (rồng đã chết) — xem
+// update.js. CHỈ chạy trên máy Host/Solo (nơi thực sự tính vật lý/va chạm và biết
+// chính xác lúc nào chạm cờ); Client không tự gọi hàm này, mà chờ nhận lại đúng 1
+// bộ dữ liệu (levelNum, elapsedMs, danh sách tên) từ Host qua tín hiệu 'levelClear',
+// để đảm bảo Host và mọi Client đều ghi CÙNG MỘT hạng, không bị lệch tên/lệch giờ.
+//
+// Nếu chơi Host nhiều người: TẤT CẢ người chơi thật (không phải Bot) còn sống tại
+// thời điểm chạm cờ sẽ được gom chung vào 1 entry duy nhất (cùng 1 hạng), đúng như
+// yêu cầu "chỉ ra tên của tất cả các người đó trong cùng 1 hạng".
+function recordLevelClear(levelNum, elapsedMs) {
+  if (!players) return;
+  const names = [];
+  for (const id in players) {
+    const p = players[id];
+    if (p.isBot) continue;
+    if (p.eliminated) continue;
+    names.push((p.name || 'Player').slice(0, 20));
+  }
+  if (names.length === 0) return; // không còn người chơi thật nào (toàn Bot / đã bị loại) -> không ghi
+  const entry = { level: levelNum, timeMs: elapsedMs, names: names, date: Date.now() };
+  if (typeof addLeaderboardEntries === 'function') addLeaderboardEntries([entry]);
+  // Chỉ Host mới cần gửi cho Client (Solo không có ai để gửi); Client nhận và ghi
+  // lại đúng entry này vào bảng xếp hạng RIÊNG trên máy của họ (xem net.js).
+  if (NET.mode === 'host') {
+    NET.sendToAllClients({ t: 'levelClear', level: levelNum, elapsedMs: elapsedMs, names: names });
+  }
+}
+
+// Client nhận đúng 1 entry đã dựng sẵn từ Host (không tự tính toán lại) -> ghi
+// thẳng vào bảng xếp hạng riêng trên máy Client.
+function applyLevelClearFromHost(data) {
+  if (!data) return;
+  const entry = { level: data.level, timeMs: data.elapsedMs, names: data.names || [], date: Date.now() };
+  if (typeof addLeaderboardEntries === 'function') addLeaderboardEntries([entry]);
+}

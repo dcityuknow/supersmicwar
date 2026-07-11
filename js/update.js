@@ -586,6 +586,11 @@ function runAuthoritativeUpdate() {
       }
     } else {
       score += 500;
+      // Ghi lại vào bảng xếp hạng NGAY lúc pass xong màn hiện tại (currentLevel),
+      // bất kể đây là màn giữa hay màn cuối cùng — xem recordLevelClear() trong
+      // game-state.js. Phải đọc currentLevel TRƯỚC khi advanceLevel() tăng nó lên,
+      // để ghi đúng số màn vừa pass (không phải màn sắp tới).
+      recordLevelClear(currentLevel, Date.now() - gameStartTime);
       if (currentLevel < TOTAL_LEVELS) {
         advanceLevel();
       } else {
