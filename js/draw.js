@@ -120,7 +120,11 @@ function draw() {
     const flashHidden = p.invincible > 0 && Math.floor(p.invincible/5)%2!==0 && p.animState !== 'xoac';
     // Hình vẽ to hơn hitbox CHAR_DRAW_SCALE lần, canh giữa theo chiều ngang,
     // canh đáy trùng đáy hitbox (+ offset nhỏ) để chân luôn chạm đất đúng chỗ va chạm thực tế.
-    const drawW = p.w * CHAR_DRAW_SCALE;
+    // Vẽ hình theo visualW (bề rộng THẬT theo sizeMult, không bị hitboxWidthTrim bóp) để
+    // nhân vật không bị vẽ hẹp/gầy đi so với ảnh gốc; vẫn canh giữa hình theo đúng tâm
+    // hitbox thật (p.w) để vị trí đứng nhìn tự nhiên, không lệch tâm.
+    const visualW = p.visualW || p.w;
+    const drawW = visualW * CHAR_DRAW_SCALE;
     const drawH = p.h * CHAR_DRAW_SCALE;
     const drawX = p.x - (drawW - p.w) / 2;
     // Các offset (CHAR_VISUAL_Y_OFFSET, CHAR_Y_OFFSET_BY_ID) được tinh chỉnh để bù

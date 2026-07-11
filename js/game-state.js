@@ -35,7 +35,12 @@ function makePlayer(id, name, charId, groundY, isBot) {
     id: id, name: name || 'Player', charId: charId,
     isBot: !!isBot,
     x: 120, y: groundY - 720,
+    // w = bề rộng HITBOX dùng cho va chạm (có bị hitboxWidthTrim bóp bớt nếu nhân vật khai báo).
+    // visualW = bề rộng THẬT dùng để VẼ HÌNH, luôn đúng tỉ lệ theo sizeMult, KHÔNG bị trim
+    // -- tách riêng 2 giá trị này để hitboxWidthTrim chỉ ảnh hưởng va chạm, không làm nhân
+    // vật bị vẽ hẹp/gầy đi so với hình gốc.
     w: Math.max(1, baseW * sizeMult - hitboxWidthTrim), h: baseH * sizeMult,
+    visualW: baseW * sizeMult,
     vx: 0, vy: 0,
     speed: 13.5 * speedMult * botJitter,
     // Gia tốc di chuyển mỗi frame khi bấm trái/phải, cũng nhân theo speedMult - nếu chỉ
