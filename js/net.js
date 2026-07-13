@@ -385,10 +385,30 @@ const NET = (() => {
     return Object.values(roster);
   }
 
+  // Rời phòng mạng hiện tại (nếu có) và đưa NET về đúng trạng thái ban đầu như
+  // lúc mới mở trang, để người chơi có thể chọn lại BẤT KỲ chế độ nào (kể cả
+  // Host phòng mới / Join phòng khác) từ đầu. Gọi khi ván chơi kết thúc và tự
+  // động quay về lobby chính (xem returnToMainMenu trong game-state.js).
+  function resetToMenu() {
+    if (peer) {
+      try { peer.destroy(); } catch (e) { /* peer đã đóng sẵn rồi -> bỏ qua */ }
+    }
+    peer = null;
+    hostConn = null;
+    for (const id in clientConns) delete clientConns[id];
+    roster = {};
+    mode = 'solo';
+    myPeerId = null;
+    onLobbyUpdate = null;
+    onStartReceived = null;
+    onConnError = null;
+    broadcastCounter = 0;
+  }
+
   return {
     initSolo, initHost, initClient, initBotTeam, assignBotCharacters,
     startGameSignal, broadcastLevelInit, tickBroadcast, sendToAllClients,
-    sendInputTick, sendMyChar, sendChat, getRoster,
+    sendInputTick, sendMyChar, sendChat, getRoster, resetToMenu,
     get mode() { return mode; },
     get myId() { return myPeerId; },
     set onLobbyUpdate(fn) { onLobbyUpdate = fn; },

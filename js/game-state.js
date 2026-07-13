@@ -208,10 +208,89 @@ function startGame() {
   if (NET.mode === 'host') NET.broadcastLevelInit(level);
 }
 
-function restartGame() {
-  if (NET.mode === 'client') return; // chỉ Host/Solo được chơi lại
-  resetState();
-  if (NET.mode === 'host') NET.broadcastLevelInit(level);
+// Kết thúc ván chơi trên máy điều khiển logic (Host/Solo/Bot-team) — người thắng hay
+// thua đều tự động quay về LOBBY CHÍNH (màn hình chọn chế độ đầu tiên) sau một
+// khoảng ngắn để người chơi kịp đọc thông báo, KHÔNG còn nút "Play Again" nữa
+// (trước đây bấm nút đó mới chơi lại được, giờ tự động điều hướng).
+function endGame(didWin) {
+  gameOver = true;
+  win = didWin;
+  if (didWin) SFX.win(); else SFX.gameOver();
+  showEndOverlay(didWin);
+  if (NET.mode === 'host') NET.sendToAllClients({ t: 'gameOver', win: didWin });
+}
+
+// Client nhận tín hiệu kết thúc ván từ Host -> cũng tự quay về lobby chính của
+// riêng máy Client (không chờ Host bấm gì thêm, vì không còn nút Play Again).
+function endGameClient(didWin) {
+  gameOver = true;
+  win = didWin;
+  if (didWin) SFX.win(); else SFX.gameOver();
+  showEndOverlay(didWin);
+}
+
+// Số mili-giây hiển thị banner "YOU WIN / GAME OVER" trước khi tự động quay về
+// lobby chính. Đủ ngắn để không gây khó chịu, đủ dài để người chơi kịp đọc.
+const END_OVERLAY_AUTO_RETURN_MS = 2200;
+let endOverlayReturnTimer = null;
+
+function showEndOverlay(didWin) {
+  document.getElementById('overlay').style.display = 'flex';
+  document.getElementById('overlayText').textContent = didWin ? '🏆 YOU WIN! 🏆' : '💀 GAME OVER 💀';
+  if (endOverlayReturnTimer) clearTimeout(endOverlayReturnTimer);
+  endOverlayReturnTimer = setTimeout(returnToMainMenu, END_OVERLAY_AUTO_RETURN_MS);
+}
+
+// Dọn sạch ván chơi hiện tại và đưa người chơi về HẲN màn hình chọn chế độ đầu
+// tiên (#modeScreen) — Solo / Team-Bot / Create Room / Join Room — giống như
+// vừa mở lại trang. Áp dụng cho MỌI chế độ (Solo, Team-Bot, Host, Client):
+// nếu đang ở phòng mạng (Host/Client) thì rời phòng luôn (NET.resetToMenu),
+// để tránh còn giữ kết nối "ma" sau khi ván đã kết thúc.
+function returnToMainMenu() {
+  if (endOverlayReturnTimer) { clearTimeout(endOverlayReturnTimer); endOverlayReturnTimer = null; }
+
+  started = false;
+  gameOver = false;
+  win = false;
+  players = null;
+  level = null;
+
+  document.getElementById('overlay').style.display = 'none';
+  document.getElementById('ui').classList.add('hidden');
+  document.getElementById('info').classList.add('hidden');
+  const teamBox = document.getElementById('teamLivesBox');
+  if (teamBox) { teamBox.classList.add('hidden'); teamBox.innerHTML = ''; }
+  if (typeof closeChatBox === 'function') closeChatBox();
+
+  document.getElementById('selectScreen').style.display = 'none';
+  document.getElementById('modeScreen').style.display = 'flex';
+
+  // Reset lại toàn bộ UI của lobby/select-screen về đúng trạng thái ban đầu
+  // (như lúc mới mở trang), để lần chơi kế tiếp không bị dính trạng thái cũ.
+  selectedChar = null;
+  document.querySelectorAll('.charCard').forEach(el => el.classList.remove('selected'));
+  if (typeof startBtn !== 'undefined' && startBtn) {
+    startBtn.classList.remove('ready');
+    startBtn.style.display = '';
+  }
+  const lobbyBarEl = document.getElementById('lobbyBar');
+  const roomCodeBoxEl = document.getElementById('roomCodeBox');
+  const joinRowEl = document.getElementById('joinRow');
+  const botCountRowEl = document.getElementById('botCountRow');
+  const waitingTextEl = document.getElementById('waitingText');
+  const joinCodeInputEl = document.getElementById('joinCodeInput');
+  const joinErrorEl = document.getElementById('joinError');
+  if (lobbyBarEl) lobbyBarEl.classList.add('hidden');
+  if (roomCodeBoxEl) roomCodeBoxEl.classList.add('hidden');
+  if (joinRowEl) joinRowEl.classList.add('hidden');
+  if (botCountRowEl) botCountRowEl.classList.add('hidden');
+  if (waitingTextEl) waitingTextEl.classList.add('hidden');
+  if (joinCodeInputEl) joinCodeInputEl.value = '';
+  if (joinErrorEl) joinErrorEl.textContent = '';
+
+  // Rời phòng mạng (nếu có) và đưa NET về trạng thái ban đầu, để người chơi có
+  // thể chọn lại bất kỳ chế độ nào (kể cả Host/Join phòng mới) từ đầu.
+  if (typeof NET !== 'undefined' && NET.resetToMenu) NET.resetToMenu();
 }
 
 function rectsOverlap(a, b) {
@@ -220,7 +299,13 @@ function rectsOverlap(a, b) {
 
 // Người chơi `p` mất 1 mạng CỦA RIÊNG mình. Hết mạng riêng -> người đó bị loại khỏi
 // trận (không hồi sinh nữa cho tới ván mới), nhưng đồng đội còn mạng vẫn chơi tiếp.
-// Chỉ khi TẤT CẢ mọi người (bao gồm cả Bot) đều hết mạng thì cả team mới thua.
+//
+// NGOẠI LỆ riêng cho chế độ "Team with Bots" (NET.mode === 'bot'): Bot chỉ là
+// đồng đội hỗ trợ, không phải người chơi thật, nên khi NGƯỜI CHƠI CHÍNH (myId,
+// không phải Bot) hết mạng, cả trận kết thúc NGAY LẬP TỨC (thua), không cần chờ
+// tới lượt các Bot cũng hết mạng theo (khác với chế độ nhiều người thật qua
+// Host, nơi mọi người chơi thật đều bình đẳng và phải chờ TẤT CẢ cùng hết mạng
+// mới thua chung — xem checkTeamWipe bên dưới).
 function loseLife(p) {
   if (p.eliminated) return;
   p.lives--;
@@ -237,6 +322,11 @@ function loseLife(p) {
     p.spearActive = false; // hồi sinh lại -> không còn bị kẹt chờ lao của mạng trước
   }
   updateHudTotals();
+
+  if (NET.mode === 'bot' && p.eliminated && !p.isBot && p.id === myId) {
+    endGame(false); // người chơi chính hết mạng ở chế độ Team-Bot -> thua ngay, không chờ Bot
+    return;
+  }
   checkTeamWipe();
 }
 
@@ -247,31 +337,6 @@ function checkTeamWipe() {
   if (ids.length === 0) return;
   const allEliminated = ids.every(id => players[id].eliminated);
   if (allEliminated) endGame(false);
-}
-
-function endGame(didWin) {
-  gameOver = true;
-  win = didWin;
-  if (didWin) SFX.win(); else SFX.gameOver();
-  showEndOverlay(didWin, NET.mode !== 'client');
-  if (NET.mode === 'host') NET.sendToAllClients({ t: 'gameOver', win: didWin });
-}
-
-// Client nhận tín hiệu kết thúc ván từ Host
-function endGameClient(didWin) {
-  gameOver = true;
-  win = didWin;
-  if (didWin) SFX.win(); else SFX.gameOver();
-  showEndOverlay(didWin, false);
-}
-
-function showEndOverlay(didWin, canRestart) {
-  document.getElementById('overlay').style.display = 'flex';
-  document.getElementById('overlayText').textContent = didWin ? '🏆 YOU WIN! 🏆' : '💀 GAME OVER 💀';
-  const btn = document.getElementById('restartBtn');
-  const waitTxt = document.getElementById('restartWaitText');
-  if (btn) btn.style.display = canRestart ? 'inline-block' : 'none';
-  if (waitTxt) waitTxt.style.display = canRestart ? 'none' : 'block';
 }
 
 // ---------- Nhận dữ liệu từ Host (chỉ chạy trên máy Client) ----------
