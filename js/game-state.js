@@ -358,6 +358,9 @@ function applyLevelInit(data) {
     flyingEnemies: [],
     projectiles: [],
     spears: [],
+    lyronBullets: [],
+    lyronCrates: [],
+    lyronCratesUsed: 0,
     boss: null,
     flagWarnCooldown: 0
   };
@@ -413,6 +416,8 @@ function applyStateSnapshot(data) {
   level.projectiles = data.projectiles || [];
   level.flyingEnemies = data.flyingEnemies || [];
   level.spears = data.spears || [];
+  level.lyronBullets = data.lyronBullets || [];
+  level.lyronCrates = data.lyronCrates || [];
 
   if (!players) players = {};
   for (const id in data.players) {
@@ -423,6 +428,12 @@ function applyStateSnapshot(data) {
       players[id] = p;
     }
     if (p.hp > np.hp) SFX.hurt();
+    else if (np.hp > p.hp && np.hp >= np.maxHp) {
+      // HP vừa nhảy lên ĐẦY -> chắc chắn là vừa nhặt hộp máu cứu sinh của Lyron (Client
+      // không tự tính va chạm nên chỉ có thể suy ra qua bước nhảy HP này để phát hiệu ứng).
+      SFX.heal();
+      spawnHealEffect(np.x + p.w / 2, np.y - 10);
+    }
     p.x = np.x; p.y = np.y; p.facing = np.facing;
     p.animState = np.animState; p.animFrame = np.animFrame;
     p.hp = np.hp; p.maxHp = np.maxHp; p.charId = np.charId; p.name = np.name;

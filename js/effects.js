@@ -24,6 +24,12 @@ let effects = [];
 function spawnDamageEffect(x, y, amount, color) {
   effects.push({ x, y, amount, color, life: 40, maxLife: 40, vy: -1.4 });
 }
+// Hiệu ứng nổi chữ tuỳ ý (vd "FULL HP!") khi nhặt hộp máu cứu sinh của Lyron - khác với
+// spawnDamageEffect ở chỗ không có dấu "-" phía trước và chữ hiển thị tuỳ chọn được, sống
+// lâu hơn 1 chút để dễ đọc.
+function spawnHealEffect(x, y, text) {
+  effects.push({ x, y, text: text || 'FULL HP!', color: '#7cff5a', life: 55, maxLife: 55, vy: -1.4 });
+}
 function updateEffects() {
   for (let i = effects.length - 1; i >= 0; i--) {
     const fx = effects[i];
@@ -43,8 +49,10 @@ function drawEffects() {
     ctx.fillStyle = fx.color;
     ctx.strokeStyle = 'rgba(0,0,0,0.8)';
     ctx.lineWidth = 3;
-    ctx.strokeText('-' + fx.amount, fx.x, fx.y);
-    ctx.fillText('-' + fx.amount, fx.x, fx.y);
+    // fx.text (vd "FULL HP!") dùng cho hiệu ứng hồi máu; mặc định vẫn là "-xx" khi mất máu
+    const label = (fx.text !== undefined) ? fx.text : ('-' + fx.amount);
+    ctx.strokeText(label, fx.x, fx.y);
+    ctx.fillText(label, fx.x, fx.y);
   }
   ctx.restore();
   ctx.globalAlpha = 1;

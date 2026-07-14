@@ -206,6 +206,9 @@ function createLevel(groundY, levelNum) {
     flyingEnemies: [],
     projectiles: [],
     spears: [], // các thanh lao đang bay do Keng ném ra (xem spawnSpear/updateSpears trong update.js)
+    lyronBullets: [], // các viên đạn đang bay do Lyron bắn ra (xem spawnLyronBullets/updateLyronBullets trong update.js)
+    lyronCrates: [], // các hộp máu cứu sinh do Lyron thả xuống (xem spawnLyronCrate/updateLyronCrates trong update.js)
+    lyronCratesUsed: 0, // số lần đã thả hộp máu trong MÀN NÀY (dùng chung cả team, tối đa LYRON_MAX_CRATES_PER_LEVEL)
     flagWarnCooldown: 0 // chống spam banner "phải hạ boss trước" mỗi khi chạm cờ lúc rồng còn sống
   };
 

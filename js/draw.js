@@ -137,6 +137,64 @@ function draw() {
     ctx.restore();
   }
 
+  // Đạn của Lyron (bắn ra khi bấm Z): quả cầu năng lượng xanh lam phát sáng, phân biệt
+  // rõ với đạn đỏ của quái vật ở trên.
+  for (const b of (level.lyronBullets || [])) {
+    ctx.save();
+    const pulse = 1 + Math.sin(gameFrame * 0.35 + b.x * 0.06) * 0.15;
+
+    const glow = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * 2.2 * pulse);
+    glow.addColorStop(0, 'rgba(60,190,255,0.65)');
+    glow.addColorStop(1, 'rgba(60,190,255,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r * 2.2 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    const coreGrad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * pulse);
+    coreGrad.addColorStop(0, '#eaffff');
+    coreGrad.addColorStop(0.5, '#3cbeff');
+    coreGrad.addColorStop(1, '#0a4a7a');
+    ctx.fillStyle = coreGrad;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r * pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // Hộp máu cứu sinh của Lyron (thả khi bấm X): vẽ bằng ảnh hopcuusinh.png, hơi bồng bềnh
+  // khi đã nằm yên trên bệ để dễ nhận ra giữa màn hình.
+  const crateImgReady = crateImg.complete && crateImg.naturalWidth > 0;
+  for (const c of (level.lyronCrates || [])) {
+    ctx.save();
+    const bob = c.landed ? Math.sin(gameFrame * 0.08 + c.x * 0.05) * 4 : 0;
+    const cx = c.x, cy = c.y + bob;
+
+    if (crateImgReady) {
+      ctx.drawImage(crateImg, cx, cy, c.w, c.h);
+    } else {
+      // Ảnh chưa tải xong -> vẽ tạm hộp trắng viền đỏ + chữ thập đỏ bằng code
+      ctx.shadowColor = 'rgba(255,60,60,0.75)';
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = '#f4f4f4';
+      ctx.strokeStyle = '#d32f2f';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(cx, cy, c.w, c.h, 8) : ctx.rect(cx, cy, c.w, c.h);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#e53935';
+      const crossT = c.w * 0.22;
+      const pad = c.w * 0.16;
+      ctx.fillRect(cx + c.w / 2 - crossT / 2, cy + pad, crossT, c.h - pad * 2);
+      ctx.fillRect(cx + pad, cy + c.h / 2 - crossT / 2, c.w - pad * 2, crossT);
+    }
+    ctx.restore();
+  }
+
   // ----- Tất cả người chơi (mỗi người ảnh nhân vật riêng theo lựa chọn của họ) -----
   for (const id in players) {
     const p = players[id];

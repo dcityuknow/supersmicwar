@@ -101,7 +101,33 @@ const CHARACTERS = [
     damageMult: 1,
   },
 
+  // ----- Lyron: trực thăng - BAY TRÊN TRỜI thay vì chạy bộ như các nhân vật khác
+  // (xem cờ isFlyer bên dưới, được stepPlayerInput/stepPlayerPhysics trong update.js
+  // xử lý riêng: không trọng lực, không va chạm địa hình, điều khiển lên/xuống bằng
+  // ArrowUp (hoặc Space)/ArrowDown thay vì nhảy). Đòn Z không phải đá tay không mà bắn
+  // ra 5 viên đạn cùng lúc, hồi chiêu 10 giây (xem spawnLyronBullets/LYRON_* trong
+  // update.js + config.js). -----
+  {
+    id: 'lyron',
+    name: 'Lyron',
+    hpMult: 1,
+    sizeMult: 1,
+    hitboxWidthTrim: 0,
+    hitboxHeightTrim: 0,
+    speedMult: 1,
+    damageMult: 1,
+    isFlyer: true, // bay tự do trên không, không đi bộ/nhảy/rơi theo trọng lực như các nhân vật khác
+  },
+
 ];
+
+// Kiểm tra 1 nhân vật (theo charId) có phải kiểu BAY (như Lyron) hay không — dùng ở
+// nhiều nơi (update.js, draw.js...) để rẽ nhánh xử lý vật lý/hoạt ảnh riêng cho nhân
+// vật bay, thay vì chạy bộ/nhảy/rơi theo trọng lực như các nhân vật còn lại.
+function isFlyerChar(charId) {
+  const c = getCharById(charId);
+  return !!(c && c.isFlyer);
+}
 
 // Lấy chỉ số (hệ số riêng) theo charId, dùng giá trị mặc định 1 nếu nhân vật không
 // khai báo hệ số đó (tức không đổi so với chỉ số gốc).
@@ -128,6 +154,13 @@ backgroundImg.src = 'background.png';
 // Ảnh đồng xu (thebai.png) - đặt file này cùng thư mục với index.html
 const coinImg = new Image();
 coinImg.src = 'thebai.png';
+
+// Ảnh hộp máu cứu sinh của Lyron (hopcuusinh.png) - đặt cùng thư mục với index.html.
+// Dùng khi vẽ các hộp máu do Lyron thả ra khi bấm X (xem draw.js + spawnLyronCrate
+// trong update.js). Ảnh chưa tải xong thì draw.js tự vẽ tạm 1 hộp trắng viền đỏ + chữ
+// thập đỏ bằng code (xem fallback trong draw.js).
+const crateImg = new Image();
+crateImg.src = 'hopcuusinh.png';
 
 let selectedChar = null;
 

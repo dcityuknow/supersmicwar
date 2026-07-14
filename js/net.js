@@ -313,7 +313,9 @@ const NET = (() => {
       } : null,
       projectiles: level.projectiles,
       flyingEnemies: level.flyingEnemies,
-      spears: level.spears || []
+      spears: level.spears || [],
+      lyronBullets: level.lyronBullets || [],
+      lyronCrates: level.lyronCrates || []
     };
     for (const id in players) {
       const p = players[id];
@@ -365,6 +367,10 @@ const NET = (() => {
     if (mode !== 'client' || !hostConn || !hostConn.open) return;
     const slim = {
       ArrowLeft: !!keysObj['ArrowLeft'], ArrowRight: !!keysObj['ArrowRight'],
+      // ArrowUp/ArrowDown/Space: dùng cho điều khiển bay lên/xuống của nhân vật bay
+      // (Lyron - xem isFlyer trong characters.js). Các nhân vật khác bỏ qua các phím này
+      // (trừ jump pulse riêng, gửi ở trường `jump` bên dưới).
+      ArrowUp: !!keysObj['ArrowUp'], ArrowDown: !!keysObj['ArrowDown'], Space: !!keysObj['Space'],
       KeyZ: !!keysObj['KeyZ'], KeyX: !!keysObj['KeyX']
     };
     hostConn.send({ t: 'input', keys: slim, jump: !!jumpPulse });

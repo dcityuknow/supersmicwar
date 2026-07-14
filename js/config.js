@@ -29,6 +29,30 @@ const SPEAR_LIFE = 45;    // số frame lao tồn tại trước khi tự biến
 const SPEAR_W = 380;      // kích thước hitbox/hình vẽ của lao
 const SPEAR_H = 160;
 
+// ----- Lyron: trực thăng bay trên trời (xem isFlyer trong characters.js) -----
+// Điều khiển lên/xuống (thay cho nhảy): gia tốc/tốc độ tối đa theo chiều dọc.
+const LYRON_FLY_ACCEL = 3.8;     // gia tốc bay lên/xuống mỗi frame khi giữ phím
+const LYRON_FLY_MAX_SPEED = 13.5; // tốc độ bay lên/xuống tối đa
+// Bấm Z: bắn ra 1 loạt gồm nhiều viên đạn cùng lúc, hồi chiêu RIÊNG (dài hơn hẳn đòn
+// đá/xoạc thường của các nhân vật khác) thay cho SHOOT_COOLDOWN mặc định.
+const LYRON_BULLET_COUNT = 5;      // số viên đạn bắn ra mỗi lần bấm Z
+const LYRON_SHOOT_COOLDOWN = 600;  // hồi chiêu 10 giây (ở 60 khung hình/giây)
+const LYRON_BULLET_SPEED = 22;     // tốc độ bay ngang của mỗi viên đạn
+const LYRON_BULLET_RADIUS = 14;    // kích thước hitbox/hình vẽ mỗi viên đạn
+const LYRON_BULLET_LIFE = 90;      // số frame đạn tồn tại trước khi tự biến mất nếu không trúng gì
+const LYRON_BULLET_DAMAGE = KICK_DAMAGE; // sát thương MỖI viên đạn (đã nhân damageMult ở makePlayer)
+
+// Bấm X: thả xuống 1 hộp máu cứu sinh RƠI TỰ DO thay cho đòn xoạc cận chiến thường -
+// người chơi nào (bất kỳ ai trong team) chạm vào hộp cũng được hồi ĐẦY máu ngay lập tức.
+// Giới hạn theo MÀN (dùng chung cho cả team, không phải riêng từng người), KHÔNG có
+// hồi chiêu riêng nào khác ngoài đúng thời gian giữ tư thế xoạc (XOAC_DURATION/XOAC_COOLDOWN).
+const LYRON_MAX_CRATES_PER_LEVEL = 3; // tối đa số lần thả hộp máu mỗi màn chơi
+const LYRON_CRATE_SIZE = 64;          // kích thước hộp máu (hình vuông)
+// Hộp máu rơi CHẬM RÃI, ĐỀU TỐC ĐỘ (không tăng tốc theo trọng lực như vật thể thường) cho
+// tới khi chạm đất/bệ thì dừng hẳn - tốc độ nhỏ để người chơi có thời gian nhìn thấy và
+// chạy tới đón hộp thay vì rơi vèo một cái đã chạm đất.
+const LYRON_CRATE_FALL_SPEED = 2.2;
+
 // ----- Đạn quái vật bắn ra -----
 const PROJECTILE_DAMAGE = 15;        // máu mất khi trúng đạn quái
 const PROJECTILE_SPEED_MIN = 6;

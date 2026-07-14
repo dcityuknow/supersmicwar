@@ -129,6 +129,12 @@ const SFX = (() => {
     dragonFire() {
       tone(140, 0.55, { type: 'sawtooth', gain: 0.24, glideTo: 55 });
       noiseHit(0.5, { gain: 0.24 });
+    },
+    // 10. Tiếng "ting" ấm áp lan toả khi nhặt hộp máu cứu sinh của Lyron (hồi đầy máu):
+    // chuỗi nốt đi lên nhẹ nhàng, êm hơn tiếng xu (coin) để cảm giác "chữa lành" rõ rệt.
+    heal() {
+      const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
+      notes.forEach((f, i) => tone(f, 0.26, { startTime: i * 0.09, type: 'sine', gain: 0.22 }));
     }
   };
 })();

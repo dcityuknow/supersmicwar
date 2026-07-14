@@ -47,6 +47,9 @@ function stepPlayerInput(p, k, jumpPulse) {
   // lao mới, mà chờ đúng lúc lao vừa rồi biến mất (trúng gì đó / hết tầm bay) — xem cờ
   // p.spearActive, được updateSpears() đặt lại false khi lao đó bị xoá khỏi màn.
   const isKeng = p.charId === 'keng';
+  // Riêng Lyron: bấm Z bắn ra 1 loạt 5 viên đạn cùng lúc thay vì đá tay không, hồi
+  // chiêu riêng LYRON_SHOOT_COOLDOWN (10 giây) dài hơn hẳn SHOOT_COOLDOWN mặc định.
+  const isLyron = p.charId === 'lyron';
   const attackReady = isKeng ? !p.spearActive : p.shootCooldown <= 0;
 
   if (p.xoacTimer <= 0 && k['KeyZ'] && p.shootTimer <= 0 && attackReady) {
@@ -55,6 +58,9 @@ function stepPlayerInput(p, k, jumpPulse) {
     if (isKeng) {
       spawnSpear(p);
       p.spearActive = true;
+    } else if (isLyron) {
+      spawnLyronBullets(p);
+      p.shootCooldown = LYRON_SHOOT_COOLDOWN;
     } else {
       p.shootCooldown = SHOOT_COOLDOWN;
     }
@@ -63,6 +69,18 @@ function stepPlayerInput(p, k, jumpPulse) {
     p.xoacTimer = XOAC_DURATION;
     p.xoacCooldown = XOAC_COOLDOWN;
     p.invincible = Math.max(p.invincible, XOAC_DURATION);
+    // Riêng Lyron: xoạc không phải đòn cận chiến mà thả xuống 1 hộp máu cứu sinh (rơi tự
+    // do theo trọng lực), tối đa LYRON_MAX_CRATES_PER_LEVEL lần MỖI MÀN (dùng chung cho cả
+    // team, không tính riêng từng người) — không có hồi chiêu riêng nào khác, chỉ bị giới
+    // hạn bởi đúng thời gian giữ tư thế xoạc (XOAC_DURATION/XOAC_COOLDOWN) như các nhân vật
+    // khác, và bởi số lượt thả còn lại trong màn.
+    if (isLyron) {
+      if (level.lyronCratesUsed === undefined) level.lyronCratesUsed = 0;
+      if (level.lyronCratesUsed < LYRON_MAX_CRATES_PER_LEVEL) {
+        spawnLyronCrate(p);
+        level.lyronCratesUsed++;
+      }
+    }
     SFX.slash();
   }
 
@@ -78,7 +96,20 @@ function stepPlayerInput(p, k, jumpPulse) {
   if (Math.abs(p.vx) > maxSpeed) p.vx = maxSpeed * Math.sign(p.vx);
   if (Math.abs(p.vx) < 0.05) p.vx = 0;
 
-  if (jumpPulse && !isActing) {
+  if (isLyron) {
+    // Trực thăng bay tự do trên trời: KHÔNG nhảy như các nhân vật khác, mà điều khiển
+    // lên/xuống liên tục bằng ArrowUp (hoặc Space) để bay lên, ArrowDown để hạ xuống.
+    // Không có trọng lực (xem stepPlayerPhysics) nên khi buông phím sẽ tự lơ lửng đứng yên.
+    if (!isActing) {
+      if (k['ArrowUp'] || k['Space']) p.vy -= LYRON_FLY_ACCEL;
+      if (k['ArrowDown']) p.vy += LYRON_FLY_ACCEL;
+    }
+    p.vy *= FRICTION;
+    if (Math.abs(p.vy) > LYRON_FLY_MAX_SPEED) p.vy = LYRON_FLY_MAX_SPEED * Math.sign(p.vy);
+    if (Math.abs(p.vy) < 0.05) p.vy = 0;
+    p.onGround = false;
+    p.jumpsUsed = 0;
+  } else if (jumpPulse && !isActing) {
     if (p.onGround) {
       p.vy = -p.jumpPower;
       p.onGround = false;
@@ -91,6 +122,27 @@ function stepPlayerInput(p, k, jumpPulse) {
 }
 
 function stepPlayerPhysics(p) {
+  const isFlyer = isFlyerChar(p.charId);
+
+  // Nhân vật BAY (Lyron): không trọng lực, không va chạm địa hình (bay tự do trên
+  // không, lướt qua mọi bệ/hố), chỉ cần giữ trong phạm vi chiều ngang của màn chơi và
+  // chiều dọc của màn hình (không bay khuất phía trên, không chìm xuống dưới mặt đất).
+  if (isFlyer) {
+    p.x += p.vx;
+    if (p.x < 0) p.x = 0;
+    if (p.x + p.w > levelWidth) p.x = levelWidth - p.w;
+
+    p.y += p.vy;
+    if (p.y < 0) { p.y = 0; p.vy = 0; }
+    const maxFlyY = level.groundY - p.h;
+    if (p.y > maxFlyY) { p.y = maxFlyY; p.vy = 0; }
+
+    p.onGround = false;
+    p.jumpsUsed = 0;
+    if (p.invincible > 0) p.invincible--;
+    return;
+  }
+
   p.vy += GRAVITY;
   if (p.vy > 18) p.vy = 18;
 
@@ -197,6 +249,150 @@ function updateSpears() {
       const owner = players[s.ownerId];
       if (owner) owner.spearActive = false;
     }
+  }
+}
+
+// ----- Đạn của Lyron (bắn khi bấm Z, thay cho đòn đá tay không - xem LYRON_* trong config.js) -----
+
+// Bắn ra 1 loạt LYRON_BULLET_COUNT viên đạn cùng lúc, xếp lệch nhau theo chiều dọc (kiểu
+// súng máy trực thăng bắn "chùm"), bay thẳng theo đúng hướng đang quay mặt. Sát thương mỗi
+// viên dùng LYRON_BULLET_DAMAGE (hằng số riêng, không nhân theo damageMult như đòn thường,
+// vì đây vốn đã là 1 loạt 5 viên bù lại cho thời gian hồi chiêu dài).
+function spawnLyronBullets(p) {
+  if (!level) return;
+  if (!level.lyronBullets) level.lyronBullets = [];
+  const dir = p.facing;
+  const baseX = dir > 0 ? p.x + p.w * 0.7 : p.x + p.w * 0.3;
+  const baseY = p.y + p.h * 0.45;
+  const spreadY = 18; // mỗi viên lệch dọc 1 chút để trông như 1 loạt đạn, không chồng khít lên nhau
+  for (let i = 0; i < LYRON_BULLET_COUNT; i++) {
+    const offset = (i - (LYRON_BULLET_COUNT - 1) / 2) * spreadY;
+    level.lyronBullets.push({
+      x: baseX, y: baseY + offset,
+      vx: dir * LYRON_BULLET_SPEED, vy: 0,
+      r: LYRON_BULLET_RADIUS,
+      dir: dir,
+      ownerId: p.id,
+      damage: LYRON_BULLET_DAMAGE,
+      life: LYRON_BULLET_LIFE
+    });
+  }
+}
+
+// Cập nhật vị trí + va chạm của các viên đạn Lyron mỗi frame: bay thẳng theo vx, gây sát
+// thương 1 LẦN cho quái thường/rồng đầu tiên trúng phải rồi biến mất ngay (không xuyên
+// qua tiếp); tự biến mất nếu hết "tầm sống" hoặc bay ra khỏi biên màn chơi.
+function updateLyronBullets() {
+  if (!level.lyronBullets) level.lyronBullets = [];
+  for (let i = level.lyronBullets.length - 1; i >= 0; i--) {
+    const b = level.lyronBullets[i];
+    b.x += b.vx;
+    b.y += b.vy;
+    b.life--;
+
+    let hit = false;
+    const bulletBox = { x: b.x - b.r, y: b.y - b.r, w: b.r * 2, h: b.r * 2 };
+
+    // Va vào quái thường - CỐ Ý bỏ qua e.hitCooldown (khác với lao Keng/đòn thường), để
+    // nếu cả 5 viên trong 1 loạt cùng trúng 1 con quái thì DỒN đủ cả 5 lần sát thương (mỗi
+    // viên trúng 1 lần độc lập rồi tự biến mất), thay vì bị chặn chỉ tính 1 viên như các
+    // đòn tấn công khác. hitCooldown vẫn được set lại sau mỗi lần trúng để không ảnh hưởng
+    // tới các đòn tấn công cận chiến khác của người chơi trong khoảng thời gian đó.
+    for (const e of level.enemies) {
+      if (!e.alive) continue;
+      if (rectsOverlap(bulletBox, e)) {
+        const dead = damageEnemy(e, b.damage);
+        SFX.hitEnemy();
+        e.hitCooldown = ENEMY_HIT_COOLDOWN;
+        if (dead) {
+          e.alive = false;
+          score += 100;
+          spawnFlyingEnemy(e, b.dir);
+        }
+        hit = true;
+        break;
+      }
+    }
+
+    // Va vào Rồng canh giữ - cũng CỐ Ý bỏ qua boss.hitCooldown cùng lý do như trên.
+    if (!hit && level.boss && level.boss.alive && rectsOverlap(bulletBox, level.boss)) {
+      const boss = level.boss;
+      const dead = damageEnemy(boss, b.damage);
+      SFX.hitEnemy();
+      boss.hitCooldown = BOSS_HIT_COOLDOWN;
+      if (dead) {
+        boss.alive = false;
+        score += 1000;
+        showLevelBanner('GUARDIAN DRAGON DEFEATED!');
+      }
+      hit = true;
+    }
+
+    if (hit || b.life <= 0 || b.x < -200 || b.x > levelWidth + 200) {
+      level.lyronBullets.splice(i, 1);
+    }
+  }
+}
+
+// ----- Hộp máu cứu sinh của Lyron (thả khi bấm X, thay cho đòn xoạc cận chiến - xem
+// LYRON_MAX_CRATES_PER_LEVEL/LYRON_CRATE_SIZE trong config.js) -----
+
+// Thả 1 hộp máu ngay BÊN DƯỚI CHÂN Lyron (nằm ngoài hitbox của chính người thả, không
+// spawn đè lên người - nếu không hộp sẽ bị "nhặt" ngay lập tức trong cùng 1 frame vừa thả
+// ra, khiến người chơi chỉ thấy chữ "FULL HP!" mà chưa kịp thấy hộp rơi). Rơi CHẬM RÃI
+// thẳng xuống (tốc độ đều, không tăng tốc theo trọng lực) cho tới khi chạm 1 bệ (platform)
+// nào đó thì dừng lại nằm yên trên đó, chờ người chơi tới nhặt.
+function spawnLyronCrate(p) {
+  if (!level) return;
+  if (!level.lyronCrates) level.lyronCrates = [];
+  const size = LYRON_CRATE_SIZE;
+  level.lyronCrates.push({
+    x: p.x + p.w / 2 - size / 2,
+    y: p.y + p.h + 6, // ngay dưới chân, không chồng lên hitbox người thả
+    w: size, h: size,
+    landed: false,
+    // Vài frame đầu KHÔNG cho nhặt (kể cả người vừa thả), để hộp luôn kịp hiện ra và rơi
+    // ít nhất một đoạn ngắn trước khi có thể biến mất - tránh bug "vừa thả đã biến mất".
+    spawnGrace: 20
+  });
+}
+
+// Cập nhật vật lý rơi + việc nhặt hộp máu mỗi frame. Hộp rơi CHẬM, ĐỀU TỐC ĐỘ (không
+// dùng GRAVITY/tăng tốc như các vật thể rơi khác trong game) cho tới khi chạm bệ thì nằm
+// yên; BẤT KỲ người chơi nào (kể cả người vừa thả, sau khi hết spawnGrace) chạm vào hộp -
+// dù đang rơi hay đã nằm yên - đều được hồi ĐẦY máu ngay lập tức rồi hộp biến mất.
+function updateLyronCrates() {
+  if (!level.lyronCrates) level.lyronCrates = [];
+  for (let i = level.lyronCrates.length - 1; i >= 0; i--) {
+    const c = level.lyronCrates[i];
+    if (c.spawnGrace > 0) c.spawnGrace--;
+    if (!c.landed) {
+      c.y += LYRON_CRATE_FALL_SPEED;
+      for (const pf of level.platforms) {
+        if (rectsOverlap(c, pf)) {
+          c.y = pf.y - c.h;
+          c.landed = true;
+          break;
+        }
+      }
+      // Rơi lọt hố sâu không đáy mà không trúng bệ nào -> tự biến mất, không chờ mãi
+      if (c.y > H + 400) { level.lyronCrates.splice(i, 1); continue; }
+    }
+    if (c.spawnGrace > 0) continue; // vẫn trong thời gian "chưa cho nhặt" -> bỏ qua kiểm tra va chạm
+
+    let taken = false;
+    for (const id in players) {
+      const pl = players[id];
+      if (pl.eliminated) continue;
+      if (rectsOverlap(pl, c)) {
+        pl.hp = pl.maxHp;
+        SFX.heal();
+        spawnHealEffect(pl.x + pl.w / 2, pl.y - 10);
+        taken = true;
+        break;
+      }
+    }
+    if (taken) level.lyronCrates.splice(i, 1);
   }
 }
 
@@ -395,6 +591,15 @@ function computeBotInput(p) {
     jump = true;
   }
 
+  // Bot điều khiển Lyron (nhân vật bay): không nhảy/né hố như trên, mà tự điều chỉnh độ
+  // cao bay - hạ xuống ngang tầm mục tiêu đang giao tranh (quái/boss) để bắn trúng, còn
+  // lại thì lượn ở độ cao vừa phải phía trên mặt đất khi không có mục tiêu nào gần.
+  if (isFlyerChar(p.charId)) {
+    const desiredY = target ? (target.y + target.h / 2 - p.h / 2) : (level.groundY - p.h - 260);
+    if (p.y < desiredY - 20) k.ArrowDown = true;
+    else if (p.y > desiredY + 20) k.ArrowUp = true;
+  }
+
   return { keys: k, jump: jump };
 }
 
@@ -496,8 +701,9 @@ function runAuthoritativeUpdate() {
     const p = players[id];
     if (p.eliminated) continue;
     // Keng không dùng hitbox đá tay không nữa — đòn Z của Keng là thanh lao ném ra
-    // (xem spawnSpear/updateSpears), nên không tạo shootBox melee cho Keng ở đây.
-    if (p.shootTimer > 0 && p.charId !== 'keng') {
+    // (xem spawnSpear/updateSpears). Lyron cũng vậy — đòn Z của Lyron là loạt đạn bắn ra
+    // (xem spawnLyronBullets/updateLyronBullets), nên cả 2 đều không tạo shootBox melee ở đây.
+    if (p.shootTimer > 0 && p.charId !== 'keng' && p.charId !== 'lyron') {
       const boxW = 130;
       shootBoxes[id] = {
         x: p.facing > 0 ? p.x + p.w * 0.5 : p.x + p.w * 0.5 - boxW,
@@ -582,6 +788,12 @@ function runAuthoritativeUpdate() {
 
   // Các thanh lao đang bay (Keng ném ra khi bấm Z)
   updateSpears();
+
+  // Các viên đạn đang bay (Lyron bắn ra khi bấm Z)
+  updateLyronBullets();
+
+  // Các hộp máu cứu sinh đang rơi/chờ nhặt (Lyron thả ra khi bấm X)
+  updateLyronCrates();
 
   // Quái đang bay (bị sút / xoạc trúng) — chỉ hiệu ứng hình ảnh, không cần đồng bộ tinh vi
   for (let i = level.flyingEnemies.length - 1; i >= 0; i--) {
@@ -702,7 +914,9 @@ function runAuthoritativeUpdate() {
     const p = players[id];
     if (p.shootTimer > 0) p.animState = 'shoot';
     else if (p.xoacTimer > 0) p.animState = 'xoac';
-    else if (!p.onGround) p.animState = 'jump';
+    // Nhân vật bay (Lyron) không bao giờ "onGround" (không đứng đất), nên bỏ qua điều
+    // kiện onGround cho riêng nhân vật này - nếu không sẽ bị kẹt mãi ở tư thế 'jump'.
+    else if (!p.onGround && !isFlyerChar(p.charId)) p.animState = 'jump';
     else if (Math.abs(p.vx) > 0.6) p.animState = 'run';
     else p.animState = 'idle';
 
