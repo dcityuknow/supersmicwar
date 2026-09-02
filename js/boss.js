@@ -1,34 +1,17 @@
 // ============================================================
 // boss.js — Boss Rồng canh giữ ngay trước cờ đích của mỗi màn.
-//
-// Cơ chế:
-//  - Rồng bay tuần tra qua lại trong 1 khu vực ngay trước cờ, không cho
-//    người chơi chạm cờ khi nó còn sống (chạm cờ lúc rồng còn sống chỉ
-//    hiện dòng chữ nhắc, không qua màn được).
-//  - Cứ sau một khoảng thời gian tuần tra, rồng chọn ngẫu nhiên 1 trong 2
-//    đòn tấn công:
-//      (1) "barrage": vỗ cánh mạnh, xoè ra một loạt đạn tỏa hướng về
-//          phía người chơi.
-//      (2) "fire": há miệng khạc ra một luồng lửa dài liên tục gây sát
-//          thương nếu người chơi đứng trong tầm.
-//  - Người chơi đánh trúng rồng bằng cú sút (Z) / xoạc (X) giống hệt cách
-//    đánh quái thường (dùng lại damageEnemy).
-//  - Màn sau rồng to hơn, nhiều máu hơn, và tấn công dồn dập hơn (đọc
-//    thêm ở getBossDifficulty trong config.js).
+// Dynamic Walk Cycle (Di chuyển 2 chân linh hoạt).
 // ============================================================
 
-// ----- Ảnh rồng: 2 khung hình vỗ cánh (dragon.png = cánh khép, dragon2.png = cánh xoè) -----
-// Boss sẽ luân phiên vẽ 2 ảnh này để tạo cảm giác đang vỗ cánh, thay cho hình vẽ vector cũ.
-// Nếu ảnh của bạn không nằm cùng thư mục với index.html, sửa lại đường dẫn bên dưới
-// (ví dụ 'images/dragon.png') cho khớp.
-const dragonImg1 = new Image();
-dragonImg1.src = 'dragon.png';
-const dragonImg2 = new Image();
-dragonImg2.src = 'dragon2.png';
+// ----- 6 ảnh bộ phận của rồng -----
+const bossHeadImg  = new Image(); bossHeadImg.src  = 'boss/head.png';
+const bossHead2Img = new Image(); bossHead2Img.src = 'boss/head2.png';
+const bossNgucImg  = new Image(); bossNgucImg.src  = 'boss/nguc.png';
+const bossTay1Img  = new Image(); bossTay1Img.src  = 'boss/baptay1.png';
+const bossTay2Img  = new Image(); bossTay2Img.src  = 'boss/baptay2.png';
+const bossVuot1Img = new Image(); bossVuot1Img.src = 'boss/mongvuot1.png';
+const bossVuot2Img = new Image(); bossVuot2Img.src = 'boss/mongvuot2.png';
 
-// Bảng màu riêng cho rồng ở từng màn, càng về sau càng "dữ" hơn
-// (không còn dùng để vẽ thân rồng nữa vì đã thay bằng ảnh, nhưng vẫn giữ lại
-// phòng khi cần tinting/hiệu ứng theo màn sau này)
 function getBossPalette(levelNum) {
   switch (levelNum) {
     case 1:
@@ -44,47 +27,66 @@ function getBossPalette(levelNum) {
   }
 }
 
-// Vị trí "miệng" rồng trong toạ độ thế giới (dùng chung cho cả bắn đạn,
-// khạc lửa và vẽ hiệu ứng, để mọi thứ luôn khớp nhau)
+// Hàm vẽ bộ phận có tích hợp offset động từ walk cycle
+function drawBossPart(img, w, h, dxFrac, dyFrac, wFrac, hFrac, seed, wobbleAmpPx, rotAmpRad, extraDx, extraDy, extraRot) {
+  if (!(img.complete && img.naturalWidth > 0)) return;
+  const t = gameFrame * 0.045 + seed;
+  const wobbleX = Math.sin(t) * wobbleAmpPx + (extraDx || 0);
+  const wobbleY = Math.cos(t * 1.3) * wobbleAmpPx * 0.6 + (extraDy || 0);
+  const rot = Math.sin(t * 0.8) * rotAmpRad + (extraRot || 0);
+
+  const boxW = w * wFrac, boxH = h * hFrac;
+  const imgRatio = img.naturalWidth / img.naturalHeight;
+  const boxRatio = boxW / boxH;
+  let pw, ph;
+  if (imgRatio > boxRatio) {
+    pw = boxW;
+    ph = boxW / imgRatio;
+  } else {
+    ph = boxH;
+    pw = boxH * imgRatio;
+  }
+
+  const px = w * dxFrac + wobbleX, py = h * dyFrac + wobbleY;
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(rot);
+  ctx.drawImage(img, -pw / 2, -ph / 2, pw, ph);
+  ctx.restore();
+}
+
 function getBossMouthPos(boss) {
+  const headL = BOSS_PART_LAYOUT.head;
+  const mouthOff = BOSS_PART_LAYOUT.mouthOffset;
+  const headCenterX = boss.x + boss.w / 2 + boss.facing * boss.w * headL.dx;
+  const headCenterY = boss.y + boss.h / 2 + boss.h * headL.dy;
+  const headPixelW = boss.w * headL.w;
+  const headPixelH = boss.h * headL.h;
   return {
-    x: boss.x + boss.w / 2 + boss.facing * boss.w * 0.42,
-    y: boss.y + boss.h * 0.36
+    x: headCenterX + boss.facing * headPixelW * mouthOff.dx,
+    y: headCenterY + headPixelH * mouthOff.dy
   };
 }
 
-// Tạo boss rồng canh giữ ngay trước cờ đích của màn `lvl`
 function createBoss(lvl, levelNum) {
   const diff = getBossDifficulty(levelNum);
   const flag = lvl.flag;
-  const baseW = 510, baseH = 390; // kích thước gốc của rồng ở màn 1 (đã tăng 1.5x so với trước: 340x260 -> 510x390)
+  const baseW = 510, baseH = 390;
   const w = baseW * diff.sizeMult;
   const h = baseH * diff.sizeMult;
 
-  const SAFE_GAP_BEFORE_FLAG = 300; // luôn chừa khoảng trống này trước cờ, dù rồng to cỡ nào
-  const ARENA_WIDTH = 1700;         // bề rộng khu vực rồng bay qua lại tuần tra
+  const SAFE_GAP_BEFORE_FLAG = 300;
+  const ARENA_WIDTH = 1700;
   const maxX = flag.x - SAFE_GAP_BEFORE_FLAG - w;
   const minX = maxX - ARENA_WIDTH;
 
-  // ----- Vùng bay theo chiều dọc: luôn tính theo chiều cao màn hình thực tế, -----
-  // ----- không dùng offset cố định 750px nữa (đó là lý do rồng bị lòi ra khỏi mép trên -----
-  // ----- màn hình ở các màn sau, khi sizeMult tăng làm rồng bị đẩy lên quá cao). -----
-  const SKY_TOP_MARGIN = 30;   // luôn chừa khoảng trống này ở mép trên màn hình, không để đầu/cánh rồng bị cắt
-  const GROUND_CLEARANCE = 70; // luôn chừa khoảng trống này phía trên mặt đất, không để rồng đè lên mặt đất
-  const screenH = (typeof canvas !== 'undefined' && canvas.height) ? canvas.height : 720;
-  // Rồng không được bay cao hơn mép trên màn hình, và không được thấp hơn (gần mặt đất) quá mức
-  const minFlyY = Math.max(SKY_TOP_MARGIN, lvl.groundY - screenH + SKY_TOP_MARGIN);
-  const maxFlyY = Math.min(lvl.groundY - h - GROUND_CLEARANCE, lvl.groundY - h * 0.55);
-  // Phòng trường hợp màn quá thấp khiến minFlyY > maxFlyY (rồng quá to so với vùng trời):
-  // vẫn đảm bảo có ít nhất 1 khoảng bay hợp lệ
-  const safeMaxFlyY = Math.max(maxFlyY, minFlyY + 40);
-  const midFlyY = (minFlyY + safeMaxFlyY) / 2;
+  const groundStandY = lvl.groundY - h;
 
   return {
-    x: maxX, y: midFlyY,
+    x: maxX, y: groundStandY,
     w: w, h: h,
     minX: minX, maxX: maxX,
-    minFlyY: minFlyY, maxFlyY: safeMaxFlyY, midFlyY: midFlyY,
+    groundY: groundStandY,
     levelNum: levelNum,
     diff: diff,
 
@@ -92,28 +94,27 @@ function createBoss(lvl, levelNum) {
     maxHp: Math.round(BOSS_BASE_HP * diff.hpMult),
     alive: true,
 
-    dir: -1,        // hướng bay tuần tra (trái/phải)
-    facing: -1,      // hướng đang "nhìn"/nhắm tấn công
+    dir: -1,
+    facing: -1,
     hitCooldown: 0,
     flashTimer: 0,
     animSeed: Math.random() * 100,
-    vertSeed2: Math.random() * 100, // seed riêng cho sóng bay lên/xuống thứ 2, để 2 sóng không trùng nhịp
 
-    // ----- Tốc độ bay ngang dao động ngẫu nhiên (lúc lượn nhanh, lúc lượn chậm) -----
-    speedMult: 1,           // hệ số tốc độ hiện tại (được làm mượt dần tới speedTargetMult)
-    speedTargetMult: 1,     // hệ số tốc độ đang nhắm tới
-    speedChangeTimer: 60 + Math.random() * 60, // còn bao lâu thì đổi tốc độ mục tiêu lần kế
+    speedMult: 1,
+    speedTargetMult: 1,
+    speedChangeTimer: 60 + Math.random() * 60,
 
-    phase: 'patrol', // 'patrol' | 'windup' | 'barrage' | 'fire' | 'cooldown'
-    timer: 120 + Math.random() * 60, // tuần tra 1 lúc trước khi ra đòn đầu tiên cho người chơi kịp thở
+    // Walk Cycle variables
+    walkCycle: 0, // Pha bước đi (0 đến Math.PI * 2)
+
+    phase: 'patrol',
+    timer: 120 + Math.random() * 60,
     attackChoice: null,
     barrageShotTimer: 0,
     fireTickTimer: 0
   };
 }
 
-// Tìm người chơi gần rồng nhất, dùng để rồng biết "nhìn"/nhắm bắn về hướng nào
-// khi có nhiều người chơi cùng lúc trong khu vực boss.
 function getNearestPlayer(boss) {
   let best = null, bestDist = Infinity;
   for (const id in players) {
@@ -125,7 +126,6 @@ function getNearestPlayer(boss) {
   return best;
 }
 
-// Bắn 1 đợt đạn tỏa hình quạt nhắm chung về phía người chơi gần nhất (đòn "vỗ cánh xả đạn")
 function fireBossBarrage(boss) {
   const target = getNearestPlayer(boss) || { x: boss.x, y: boss.y, w: 0, h: 0 };
   const mouth = getBossMouthPos(boss);
@@ -134,7 +134,7 @@ function fireBossBarrage(boss) {
     (target.x + target.w / 2) - mouth.x
   );
   const count = boss.diff.bulletsPerBarrage;
-  const spread = Math.PI * 0.85; // toả rộng khoảng 153 độ quanh hướng nhắm
+  const spread = Math.PI * 0.85;
   for (let i = 0; i < count; i++) {
     const angleOffset = count > 1 ? (i - (count - 1) / 2) * (spread / (count - 1)) : 0;
     const angle = targetAngle + angleOffset;
@@ -150,7 +150,6 @@ function fireBossBarrage(boss) {
   SFX.dragonWing();
 }
 
-// Kiểm tra người chơi có đang đứng trong luồng lửa không, có thì trừ máu
 function applyBossFireDamage(boss) {
   const mouth = getBossMouthPos(boss);
   const range = 620 * boss.diff.sizeMult;
@@ -167,9 +166,6 @@ function applyBossFireDamage(boss) {
   }
 }
 
-// Cập nhật logic boss mỗi frame. `shootBoxes` là map {playerId: hitbox cú sút}
-// của TẤT CẢ người chơi trong frame hiện tại (đã tính sẵn trong update.js), dùng để
-// kiểm tra va chạm giống hệt cách quái thường bị đánh trúng, nhưng với nhiều người.
 function updateBoss(shootBoxes) {
   const boss = level.boss;
   if (!boss || !boss.alive) return;
@@ -177,7 +173,6 @@ function updateBoss(shootBoxes) {
   if (boss.flashTimer > 0) boss.flashTimer--;
   if (boss.hitCooldown > 0) boss.hitCooldown--;
 
-  // ----- Người chơi tấn công trúng rồng (sút / xoạc), y hệt cách đánh quái thường -----
   for (const id in players) {
     const p = players[id];
     if (p.eliminated) continue;
@@ -196,40 +191,38 @@ function updateBoss(shootBoxes) {
       }
       break;
     } else if (p.invincible <= 0 && rectsOverlap(p, boss)) {
-      // Va chạm trực tiếp vào thân rồng (không có kiểu "dẫm đầu" vì nó đang bay)
       damagePlayer(p, BOSS_CONTACT_DAMAGE);
       p.invincible = 90;
     }
   }
 
-  // ----- Bay lượn tuần tra + luôn nhìn về phía người chơi gần nhất khi chưa khoá hướng tấn công -----
   const target = getNearestPlayer(boss);
   if ((boss.phase === 'patrol' || boss.phase === 'cooldown') && target) {
     boss.facing = (target.x + target.w / 2 < boss.x + boss.w / 2) ? -1 : 1;
   }
-  // ----- Tốc độ bay ngang đổi ngẫu nhiên theo thời gian, làm mượt bằng easing để không bị giật -----
+
   boss.speedChangeTimer--;
   if (boss.speedChangeTimer <= 0) {
-    boss.speedTargetMult = 0.45 + Math.random() * 1.35; // dao động khoảng 0.45x (rề rề) tới 1.8x (lượn nhanh)
+    boss.speedTargetMult = 0.45 + Math.random() * 1.35;
     boss.speedChangeTimer = 50 + Math.random() * 90;
   }
   boss.speedMult += (boss.speedTargetMult - boss.speedMult) * 0.025;
 
+  // Cập nhật vị trí và Walk Cycle nhịp chân
   if (boss.phase === 'patrol') {
-    boss.x += boss.dir * 4.2 * boss.speedMult;
-    if (boss.x < boss.minX) { boss.x = boss.minX; boss.dir = 1; }
-    if (boss.x > boss.maxX) { boss.x = boss.maxX; boss.dir = -1; }
+    const moveSpeed = 4.2 * boss.speedMult;
+    boss.x += boss.dir * moveSpeed;
+    // Walk cycle tiến tới nhanh hay chậm tùy theo tốc độ bò
+    boss.walkCycle += 0.08 * boss.speedMult;
+  } else {
+    // Khi đứng yên chuẩn bị đánh/xả đòn, walk cycle trả về vị trí cân bằng mượt mà
+    boss.walkCycle += (0 - boss.walkCycle % (Math.PI * 2)) * 0.1;
   }
 
-  // ----- Bay lên cao / xuống thấp: trộn 2 sóng sin chu kỳ khác nhau để trông tự nhiên hơn, -----
-  // ----- rồi kẹp trong [minFlyY, maxFlyY] để toàn thân rồng luôn nằm gọn trong màn hình. -----
-  const flyRange = boss.maxFlyY - boss.minFlyY;
-  const bigWave = Math.sin(gameFrame * 0.011 + boss.animSeed) * (flyRange * 0.5);   // sóng lớn, chu kỳ chậm: lúc bay sát trời, lúc sà thấp gần đất
-  const smallWave = Math.sin(gameFrame * 0.045 + boss.vertSeed2) * (flyRange * 0.12); // sóng nhỏ, chu kỳ nhanh hơn: rung nhẹ như đang vỗ cánh
-  let targetY = boss.midFlyY + bigWave + smallWave;
-  if (targetY < boss.minFlyY) targetY = boss.minFlyY;
-  if (targetY > boss.maxFlyY) targetY = boss.maxFlyY;
-  boss.y = targetY;
+  if (boss.x < boss.minX) { boss.x = boss.minX; boss.dir = 1; }
+  if (boss.x > boss.maxX) { boss.x = boss.maxX; boss.dir = -1; }
+
+  boss.y = boss.groundY;
 
   boss.timer--;
   switch (boss.phase) {
@@ -238,7 +231,6 @@ function updateBoss(shootBoxes) {
         boss.phase = 'windup';
         boss.attackChoice = Math.random() < 0.5 ? 'barrage' : 'fire';
         boss.timer = BOSS_WINDUP_TIME;
-        // Khoá hướng nhắm ngay khi bắt đầu lấy đà, để đòn đánh ra đúng hướng đã telegraph
         const lockTarget = getNearestPlayer(boss);
         if (lockTarget) boss.facing = (lockTarget.x + lockTarget.w / 2 < boss.x + boss.w / 2) ? -1 : 1;
       }
@@ -292,40 +284,93 @@ function updateBoss(shootBoxes) {
   }
 }
 
-// Vẽ boss rồng: dùng 2 ảnh dragon.png/dragon2.png luân phiên để mô phỏng vỗ cánh,
-// cộng thêm hiệu ứng "lấy đà" khi windup và luồng lửa khi đang khạc lửa.
+const BOSS_PART_LAYOUT = {
+  chest: { dx: -0.18, dy: -0.06, w: 0.85, h: 0.85 },
+  arm1:  { dx: -0.50, dy:  0.14, w: 0.46, h: 0.62 },
+  claw1: { dx: -0.42, dy:  0.40, w: 0.36, h: 0.36 },
+  head:  { dx: -0.16, dy: -0.38, w: 0.58, h: 0.58 },
+  arm2:  { dx:  0.20, dy:  0.12, w: 0.50, h: 0.66 },
+  claw2: { dx:  0.26, dy:  0.40, w: 0.40, h: 0.40 },
+
+  mouthOffset: { dx: 0.15, dy: 0.20 },
+};
+
 function drawBoss() {
   const boss = level.boss;
   if (!boss || !boss.alive) return;
 
-  const x = boss.x, y = boss.y, w = boss.w, h = boss.h;
-  const cx = x + w / 2, cy = y + h / 2;
+  const w = boss.w, h = boss.h;
   const facing = boss.facing;
   const flash = boss.flashTimer > 0;
+  const L = BOSS_PART_LAYOUT;
 
-  // Vỗ cánh chậm rãi lúc tuần tra, đập dồn dập khi đang xả loạt đạn
+  // Tính toán chuyển động Walk Cycle (2 chân cất bước)
+  const wc = boss.walkCycle || 0;
+  
+  // Chân 1 & Chân 2 bước ngược pha nhau (Math.sin & Math.cos/negate)
+  const leg1StepX = Math.sin(wc) * w * 0.08;
+  const leg1StepY = -Math.max(0, Math.cos(wc)) * h * 0.05; // nhấc chân lên khỏi mặt đất khi bước
+  const leg1Rot   = Math.sin(wc) * 0.25;
+
+  const leg2StepX = -Math.sin(wc) * w * 0.08;
+  const leg2StepY = -Math.max(0, -Math.cos(wc)) * h * 0.05; // nhấc chân đối diện
+  const leg2Rot   = -Math.sin(wc) * 0.25;
+
+  // Thân nhún nhường nhịp nhàng theo bước chân (nhún 2 lần mỗi chu kỳ walk)
+  const bodyBobY = Math.abs(Math.sin(wc)) * h * 0.03;
+  const headBobY = Math.sin(wc * 2) * h * 0.02;
+
+  const cx = boss.x + w / 2;
+  const cy = boss.y + h / 2 + bodyBobY; // Thân nhún xuống theo bước đi
+
   const flapSpeed = boss.phase === 'barrage' ? 0.9 : 0.12;
-  // Luân phiên giữa 2 ảnh (cánh khép / cánh xoè) theo nhịp sin ở trên để mô phỏng vỗ cánh
   const flapWave = Math.sin(gameFrame * flapSpeed + boss.animSeed);
-  const dragonImg = flapWave >= 0 ? dragonImg1 : dragonImg2;
 
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.scale(facing, 1); // từ đây mọi toạ độ coi như rồng đang quay đầu sang phải (+facing)
+  ctx.scale(facing, 1);
 
-  // Nhấp nháy đỏ khi vừa bị đánh trúng (tint đè lên đúng phần ảnh không trong suốt)
   if (flash) {
     ctx.filter = 'brightness(1.7) saturate(3) hue-rotate(-30deg)';
   }
 
-  if (dragonImg.complete && dragonImg.naturalWidth > 0) {
-    ctx.drawImage(dragonImg, -w / 2, -h / 2, w, h);
-  }
+  const windupProgress = (boss.phase === 'windup') ? (1 - boss.timer / BOSS_WINDUP_TIME) : 0;
+  const strikeOut = (boss.phase === 'barrage') ? 1 : 0;
+  const headLean = (boss.phase === 'fire') ? 1 : 0;
+  const flapAmp = 0.5 + Math.abs(flapWave) * 0.6;
+
+  // 1. Ngực (Thân chính)
+  drawBossPart(bossNgucImg, w, h, L.chest.dx, L.chest.dy, L.chest.w, L.chest.h, boss.animSeed, w * 0.006, 0.03);
+
+  // 2. Chân/Tay + Móng PHÍA SAU (Leg 1 - Bước ngược hướng facing)
+  drawBossPart(bossTay1Img, w, h, L.arm1.dx, L.arm1.dy, L.arm1.w, L.arm1.h, boss.animSeed + 11,
+    w * 0.010 * flapAmp, (0.10 + windupProgress * 0.25) * flapAmp,
+    -strikeOut * w * 0.05 + leg1StepX, strikeOut * h * 0.03 + leg1StepY, -strikeOut * 0.18 + leg1Rot);
+
+  drawBossPart(bossVuot1Img, w, h, L.claw1.dx, L.claw1.dy, L.claw1.w, L.claw1.h, boss.animSeed + 22,
+    w * 0.014 * flapAmp, (0.14 + windupProgress * 0.3) * flapAmp,
+    -strikeOut * w * 0.10 + leg1StepX * 1.2, strikeOut * h * 0.05 + leg1StepY, -strikeOut * 0.28 + leg1Rot * 1.2);
+
+  // 3. Đầu (Gật gù theo bước nhún)
+  const isAttacking = boss.phase === 'fire' || boss.phase === 'barrage';
+  const head2Ready = bossHead2Img.complete && bossHead2Img.naturalWidth > 0;
+  const headImgToUse = (isAttacking && head2Ready) ? bossHead2Img : bossHeadImg;
+  drawBossPart(headImgToUse, w, h, L.head.dx, L.head.dy, L.head.w, L.head.h, boss.animSeed + 33,
+    w * 0.006, 0.05, headLean * w * 0.05, -headLean * h * 0.02 + headBobY, 0);
+
+  // 4. Chân/Tay + Móng PHÍA TRƯỚC (Leg 2 - Bước cùng hướng facing)
+  drawBossPart(bossTay2Img, w, h, L.arm2.dx, L.arm2.dy, L.arm2.w, L.arm2.h, boss.animSeed + 44,
+    w * 0.010 * flapAmp, (0.10 + windupProgress * 0.25) * flapAmp,
+    strikeOut * w * 0.10 + leg2StepX, strikeOut * h * 0.03 + leg2StepY, strikeOut * 0.20 + leg2Rot);
+
+  drawBossPart(bossVuot2Img, w, h, L.claw2.dx, L.claw2.dy, L.claw2.w, L.claw2.h, boss.animSeed + 55,
+    w * 0.014 * flapAmp, (0.14 + windupProgress * 0.3) * flapAmp,
+    strikeOut * w * 0.16 + leg2StepX * 1.2, strikeOut * h * 0.06 + leg2StepY, strikeOut * 0.32 + leg2Rot * 1.2);
 
   ctx.filter = 'none';
-  ctx.restore(); // hết phần vẽ theo hệ toạ độ mirror-theo-facing
+  ctx.restore();
 
-  // ----- Hiệu ứng "lấy đà" trước khi ra đòn (quả cầu sáng dần ở miệng) -----
+  // Hiệu ứng "lấy đà"
   if (boss.phase === 'windup') {
     const mouth = getBossMouthPos(boss);
     const prog = 1 - boss.timer / BOSS_WINDUP_TIME;
@@ -342,7 +387,7 @@ function drawBoss() {
     ctx.restore();
   }
 
-  // ----- Luồng lửa khạc ra (chuỗi quầng lửa mờ dần theo khoảng cách) -----
+  // Luồng lửa khạc ra
   if (boss.phase === 'fire') {
     const mouth = getBossMouthPos(boss);
     const range = 620 * boss.diff.sizeMult;
@@ -369,15 +414,15 @@ function drawBoss() {
     ctx.restore();
   }
 
-  // ----- Thanh máu + tên boss -----
-  drawHealthBar(x + w / 2, y - 34, boss.hp, boss.maxHp, Math.max(160, w * 0.55));
+  // Thanh máu + tên boss
+  drawHealthBar(boss.x + w / 2, boss.y - 34, boss.hp, boss.maxHp, Math.max(160, w * 0.55));
   ctx.save();
   ctx.font = 'bold 15px Courier New';
   ctx.textAlign = 'center';
   ctx.strokeStyle = '#000';
   ctx.lineWidth = 3;
   ctx.fillStyle = '#fff';
-  ctx.strokeText('GUARDIAN DRAGON', x + w / 2, y - 46);
-  ctx.fillText('GUARDIAN DRAGON', x + w / 2, y - 46);
+  ctx.strokeText('GUARDIAN DRAGON', boss.x + w / 2, boss.y - 46);
+  ctx.fillText('GUARDIAN DRAGON', boss.x + w / 2, boss.y - 46);
   ctx.restore();
 }
